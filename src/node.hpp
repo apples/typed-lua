@@ -1,19 +1,26 @@
 #ifndef TYPEDLUA_NODE_HPP
 #define TYPEDLUA_NODE_HPP
 
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace typedlua::ast {
 
-class node {
+class Node {
 public:
-    virtual ~node() = default;
+    virtual ~Node() = default;
 };
 
-class number_literal : public node {
+class NBlock : public Node {
 public:
-    number_literal() = default;
-    number_literal(std::string v) : value(std::move(v)) {}
+    std::vector<std::unique_ptr<Node>> children;
+};
+
+class NNumberLiteral : public Node {
+public:
+    NNumberLiteral() = default;
+    NNumberLiteral(std::string v) : value(std::move(v)) {}
     std::string value;
 };
 
