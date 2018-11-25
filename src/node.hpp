@@ -154,6 +154,17 @@ public:
     }
 };
 
+class NLabel : public Node {
+public:
+    NLabel() = default;
+    NLabel(std::string n) : name(std::move(n)) {}
+    std::string name;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NLabel " << name << ")\n";
+    }
+};
+
 } // namespace typedlua::ast
 
 #endif // TYPEDLUA_NODE_HPP

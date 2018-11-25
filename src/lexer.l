@@ -37,6 +37,7 @@ extern "C" int yywrap() { }
 "//"                                return TOKEN(TSLASH2);
 ".."                                return TOKEN(TDOT2);
 "..."                               return TOKEN(TDOT3);
+"::"                                return TOKEN(TCOLON2);
 .                                   printf("Unknown token!\n"); yyterminate();
 
 %%

@@ -38,8 +38,9 @@
 %token <token> TDOT TCOMMA TCOLON TSEMICOLON
 %token <token> TPLUS TMINUS TSTAR TSLASH TSLASH2 TDOT2
 %token <token> TDOT3
+%token <token> TCOLON2
 
-%type <node> stat assign
+%type <node> stat assign label
 %type <block> block
 %type <expr> expr var functioncall prefixexpr
 %type <argseq> argseq args
@@ -76,7 +77,14 @@ prefixexpr : var { $$ = $1; }
 stat : TSEMICOLON { $$ = new NEmpty(); }
      | assign { $$ = $1; }
      | functioncall { $$ = $1; }
+     | label { $$ = $1; }
      ;
+
+label : TCOLON2 TIDENTIFIER TCOLON2 {
+          $$ = new NLabel(std::move(*$2));
+          delete $2;
+      }
+      ;
 
 assign : var TEQUAL expr {
            $$ = new NAssignment(
