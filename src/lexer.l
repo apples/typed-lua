@@ -10,9 +10,6 @@ extern "C" int yywrap() { }
 %%
 
 [ \t\n]                             ;
-[a-zA-Z_][a-zA-Z0-9_]*              SAVE_TOKEN; return TIDENTIFIER;
-[0-9]+(\.[0-9]+([eE]-?[0-9]+)?)?    SAVE_TOKEN; return TNUMBER;
-\"(\\.|[^\\"])*\"|'(\\.|[^\\'])*'   SAVE_TOKEN; return TSTRING;
 "="                                 return TOKEN(TEQUAL);
 "=="                                return TOKEN(TCEQ);
 "!="                                return TOKEN(TCNE);
@@ -38,6 +35,31 @@ extern "C" int yywrap() { }
 ".."                                return TOKEN(TDOT2);
 "..."                               return TOKEN(TDOT3);
 "::"                                return TOKEN(TCOLON2);
+"and"                               return TOKEN(TKAND);
+"break"                             return TOKEN(TKBREAK);
+"do"                                return TOKEN(TKDO);
+"else"                              return TOKEN(TKELSE);
+"elseif"                            return TOKEN(TKELSEIF);
+"end"                               return TOKEN(TKEND);
+"false"                             return TOKEN(TKFALSE);
+"for"                               return TOKEN(TKFOR);
+"function"                          return TOKEN(TKFUNCTION);
+"goto"                              return TOKEN(TKGOTO);
+"if"                                return TOKEN(TKIF);
+"in"                                return TOKEN(TKIN);
+"local"                             return TOKEN(TKLOCAL);
+"nil"                               return TOKEN(TKNIL);
+"not"                               return TOKEN(TKNOT);
+"or"                                return TOKEN(TKOR);
+"repeat"                            return TOKEN(TKREPEAT);
+"return"                            return TOKEN(TKRETURN);
+"then"                              return TOKEN(TKTHEN);
+"true"                              return TOKEN(TKTRUE);
+"until"                             return TOKEN(TKUNTIL);
+"while"                             return TOKEN(TKWHILE);
+[a-zA-Z_][a-zA-Z0-9_]*              SAVE_TOKEN; return TIDENTIFIER;
+[0-9]+(\.[0-9]+([eE]-?[0-9]+)?)?    SAVE_TOKEN; return TNUMBER;
+\"(\\.|[^\\"])*\"|'(\\.|[^\\'])*'   SAVE_TOKEN; return TSTRING;
 .                                   printf("Unknown token!\n"); yyterminate();
 
 %%

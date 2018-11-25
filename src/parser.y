@@ -39,6 +39,10 @@
 %token <token> TPLUS TMINUS TSTAR TSLASH TSLASH2 TDOT2
 %token <token> TDOT3
 %token <token> TCOLON2
+%token <token> TKAND TKBREAK TKDO TKELSE TKELSEIF TKEND
+%token <token> TKFALSE TKFOR TKFUNCTION TKGOTO TKIF TKIN
+%token <token> TKLOCAL TKNIL TKNOT TKOR TKREPEAT TKRETURN
+%token <token> TKTHEN TKTRUE TKUNTIL TKWHILE
 
 %type <node> stat assign label
 %type <block> block
@@ -78,6 +82,7 @@ stat : TSEMICOLON { $$ = new NEmpty(); }
      | assign { $$ = $1; }
      | functioncall { $$ = $1; }
      | label { $$ = $1; }
+     | TKBREAK { $$ = new NBreak(); }
      ;
 
 label : TCOLON2 TIDENTIFIER TCOLON2 {
