@@ -46,6 +46,8 @@
 
 %left TPLUS TMINUS
 %left TSTAR TSLASH TSLASH2
+%left TRPAREN
+%left TLPAREN
 
 %start chunk
 
@@ -66,8 +68,14 @@ block : stat {
       }
       ;
 
-stat : assign { $$ = $1; }
-     | expr { $$ = $1; }
+prefixexpr : var { $$ = $1; }
+           | functioncall { $$ = $1; }
+           | TLPAREN expr TRPAREN { $$ = $2; }
+           ;
+
+stat : TSEMICOLON { $$ = new NEmpty(); }
+     | assign { $$ = $1; }
+     | functioncall { $$ = $1; }
      ;
 
 assign : var TEQUAL expr {
@@ -84,13 +92,8 @@ functioncall : prefixexpr args {
              }
              ;
 
-prefixexpr : var { $$ = $1; }
-           | functioncall { $$ = $1; }
-           | TLPAREN expr TRPAREN { $$ = $2; }
-           ;
-
 expr : TNUMBER { $$ = new NNumberLiteral(std::move(*$1)); delete $1; }
-     | prefixexpr { $$ = $1; }
+     | prefixexpr %prec TRPAREN { $$ = $1; }
      ;
 
 var : TIDENTIFIER { $$ = new NIdent(std::move(*$1)); delete $1; }

@@ -1,8 +1,3 @@
-asdf()()
-23
-
-a = 54
-
-gh = func(45, fun(asdf, 45), adf(45)())(45)
-56
-
+asdf(44)()
+s = 23
+dfff = asdf()()(asdf()()(sdf(34, asd(33))))

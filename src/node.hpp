@@ -145,6 +145,15 @@ public:
     }
 };
 
+class NEmpty : public Node {
+public:
+    NEmpty() = default;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NEmpty)\n";
+    }
+};
+
 } // namespace typedlua::ast
 
 #endif // TYPEDLUA_NODE_HPP
