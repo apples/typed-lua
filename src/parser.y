@@ -44,7 +44,7 @@
 %token <token> TKLOCAL TKNIL TKNOT TKOR TKREPEAT TKRETURN
 %token <token> TKTHEN TKTRUE TKUNTIL TKWHILE
 
-%type <node> stat assign label goto
+%type <node> stat assign label goto while
 %type <block> block
 %type <expr> expr var functioncall prefixexpr
 %type <argseq> argseq args
@@ -85,7 +85,15 @@ stat : TSEMICOLON { $$ = new NEmpty(); }
      | TKBREAK { $$ = new NBreak(); }
      | goto { $$ = $1; }
      | TKDO block TKEND { $$ = $2; }
+     | while { $$ = $1; }
      ;
+
+while : TKWHILE expr TKDO block TKEND {
+          $$ = new NWhile(
+              std::unique_ptr<NExpr>($2),
+              std::unique_ptr<NBlock>($4));
+      }
+      ;
 
 goto : TKGOTO TIDENTIFIER {
          $$ = new NGoto(std::move(*$2));

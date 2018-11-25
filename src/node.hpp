@@ -185,6 +185,24 @@ public:
     }
 };
 
+class NWhile : public Node {
+public:
+    NWhile() = default;
+    NWhile(std::unique_ptr<NExpr> c, std::unique_ptr<NBlock> b) :
+        condition(std::move(c)),
+        block(std::move(b)) {}
+    std::unique_ptr<NExpr> condition;
+    std::unique_ptr<NBlock> block;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NWhile\n";
+        indent += "  ";
+        condition->dump(indent);
+        block->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
 } // namespace typedlua::ast
 
 #endif // TYPEDLUA_NODE_HPP
