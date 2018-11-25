@@ -44,7 +44,7 @@
 %token <token> TKLOCAL TKNIL TKNOT TKOR TKREPEAT TKRETURN
 %token <token> TKTHEN TKTRUE TKUNTIL TKWHILE
 
-%type <node> stat assign label
+%type <node> stat assign label goto
 %type <block> block
 %type <expr> expr var functioncall prefixexpr
 %type <argseq> argseq args
@@ -83,6 +83,13 @@ stat : TSEMICOLON { $$ = new NEmpty(); }
      | functioncall { $$ = $1; }
      | label { $$ = $1; }
      | TKBREAK { $$ = new NBreak(); }
+     | goto { $$ = $1; }
+     ;
+
+goto : TKGOTO TIDENTIFIER {
+         $$ = new NGoto(std::move(*$2));
+         delete $2;
+     }
      ;
 
 label : TCOLON2 TIDENTIFIER TCOLON2 {

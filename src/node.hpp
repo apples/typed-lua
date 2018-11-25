@@ -174,6 +174,17 @@ public:
     }
 };
 
+class NGoto : public Node {
+public:
+    NGoto() = default;
+    NGoto(std::string n) : name(std::move(n)) {}
+    std::string name;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NGoto " << name << ")\n";
+    }
+};
+
 } // namespace typedlua::ast
 
 #endif // TYPEDLUA_NODE_HPP
