@@ -84,6 +84,7 @@ stat : TSEMICOLON { $$ = new NEmpty(); }
      | label { $$ = $1; }
      | TKBREAK { $$ = new NBreak(); }
      | goto { $$ = $1; }
+     | TKDO block TKEND { $$ = $2; }
      ;
 
 goto : TKGOTO TIDENTIFIER {
