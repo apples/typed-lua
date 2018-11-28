@@ -17,7 +17,6 @@
 }
 
 %union {
-    int token;
     std::string* string;
     Node* node;
     NBlock* block;
@@ -37,18 +36,19 @@
 %destructor { delete $$; } <elseif>
 %destructor { delete $$; } <else_>
 
+%token TCEQ TCNE TCLE TCGE
+%token TSLASH2 TDOT2 TDOT3 TCOLON2
+%token TAND TBREAK TDO TELSE TELSEIF TEND
+%token TFALSE TFOR TFUNCTION TGOTO TIF TIN
+%token TLOCAL TNIL TNOT TOR TREPEAT TRETURN
+%token TTHEN TTRUE TUNTIL TWHILE
+
 %token <string> TIDENTIFIER TNUMBER TSTRING
-%token <token> TEQUAL
-%token <token> TCEQ TCNE TCLT TCLE TCGT TCGE
-%token <token> TLPAREN TRPAREN TLBRACE TRBRACE TLSQBR TRSQBR
-%token <token> TDOT TCOMMA TCOLON TSEMICOLON
-%token <token> TPLUS TMINUS TSTAR TSLASH TSLASH2 TDOT2
-%token <token> TDOT3
-%token <token> TCOLON2
-%token <token> TKAND TKBREAK TKDO TKELSE TKELSEIF TKEND
-%token <token> TKFALSE TKFOR TKFUNCTION TKGOTO TKIF TKIN
-%token <token> TKLOCAL TKNIL TKNOT TKOR TKREPEAT TKRETURN
-%token <token> TKTHEN TKTRUE TKUNTIL TKWHILE
+
+%left '+' '-'
+%left '*' '/' TSLASH2
+%left ')'
+%left '('
 
 %type <node> stat assign label goto while repeat if foriter
 %type <block> block
@@ -57,11 +57,6 @@
 %type <elseifseq> elseifseq
 %type <elseif> elseif
 %type <else_> else
-
-%left TPLUS TMINUS
-%left TSTAR TSLASH TSLASH2
-%left TRPAREN
-%left TLPAREN
 
 %start chunk
 
@@ -84,23 +79,23 @@ block: stat {
 
 prefixexpr: var { $$ = $1; }
           | functioncall { $$ = $1; }
-          | TLPAREN expr TRPAREN { $$ = $2; }
+          | '(' expr ')' { $$ = $2; }
           ;
 
-stat: TSEMICOLON { $$ = new NEmpty(); }
+stat: ';' { $$ = new NEmpty(); }
     | assign { $$ = $1; }
     | functioncall { $$ = $1; }
     | label { $$ = $1; }
-    | TKBREAK { $$ = new NBreak(); }
+    | TBREAK { $$ = new NBreak(); }
     | goto { $$ = $1; }
-    | TKDO block TKEND { $$ = $2; }
+    | TDO block TEND { $$ = $2; }
     | while { $$ = $1; }
     | repeat { $$ = $1; }
     | if { $$ = $1; }
     | foriter { $$ = $1; }
     ;
 
-foriter: TKFOR TIDENTIFIER TEQUAL expr TCOMMA expr TCOMMA expr TKDO block TKEND {
+foriter: TFOR TIDENTIFIER '=' expr ',' expr ',' expr TDO block TEND {
            $$ = new NForIter(
                std::move(*$2),
                std::unique_ptr<NExpr>($4),
@@ -109,7 +104,7 @@ foriter: TKFOR TIDENTIFIER TEQUAL expr TCOMMA expr TCOMMA expr TKDO block TKEND 
                std::unique_ptr<NBlock>($10));
            delete $2;
        }
-       | TKFOR TIDENTIFIER TEQUAL expr TCOMMA expr TKDO block TKEND {
+       | TFOR TIDENTIFIER '=' expr ',' expr TDO block TEND {
            $$ = new NForIter(
                std::move(*$2),
                std::unique_ptr<NExpr>($4),
@@ -120,7 +115,7 @@ foriter: TKFOR TIDENTIFIER TEQUAL expr TCOMMA expr TCOMMA expr TKDO block TKEND 
        }
        ;
 
-if: TKIF expr TKTHEN block elseifseq else TKEND {
+if: TIF expr TTHEN block elseifseq else TEND {
       $$ = new NIf(
           std::unique_ptr<NExpr>($2),
           std::unique_ptr<NBlock>($4),
@@ -128,7 +123,7 @@ if: TKIF expr TKTHEN block elseifseq else TKEND {
           std::unique_ptr<NElse>($6));
       delete $5;
   }
-  | TKIF expr TKTHEN block elseifseq TKEND {
+  | TIF expr TTHEN block elseifseq TEND {
       $$ = new NIf(
           std::unique_ptr<NExpr>($2),
           std::unique_ptr<NBlock>($4),
@@ -136,14 +131,14 @@ if: TKIF expr TKTHEN block elseifseq else TKEND {
           std::unique_ptr<NElse>(nullptr));
       delete $5;
   }
-  | TKIF expr TKTHEN block else TKEND {
+  | TIF expr TTHEN block else TEND {
       $$ = new NIf(
           std::unique_ptr<NExpr>($2),
           std::unique_ptr<NBlock>($4),
           {},
           std::unique_ptr<NElse>($5));
   }
-  | TKIF expr TKTHEN block TKEND {
+  | TIF expr TTHEN block TEND {
       $$ = new NIf(
           std::unique_ptr<NExpr>($2),
           std::unique_ptr<NBlock>($4),
@@ -162,30 +157,30 @@ elseifseq: elseif {
          }
          ;
 
-elseif: TKELSEIF expr TKTHEN block {
+elseif: TELSEIF expr TTHEN block {
           $$ = new NElseIf(
               std::unique_ptr<NExpr>($2), std::unique_ptr<NBlock>($4));
       }
       ;
 
-else: TKELSE block { $$ = new NElse(std::unique_ptr<NBlock>($2)); }
+else: TELSE block { $$ = new NElse(std::unique_ptr<NBlock>($2)); }
     ;
 
-repeat: TKREPEAT block TKUNTIL expr {
+repeat: TREPEAT block TUNTIL expr {
           $$ = new NRepeat(
               std::unique_ptr<NBlock>($2),
               std::unique_ptr<NExpr>($4));
       }
       ;
 
-while: TKWHILE expr TKDO block TKEND {
+while: TWHILE expr TDO block TEND {
          $$ = new NWhile(
              std::unique_ptr<NExpr>($2),
              std::unique_ptr<NBlock>($4));
      }
      ;
 
-goto: TKGOTO TIDENTIFIER {
+goto: TGOTO TIDENTIFIER {
         $$ = new NGoto(std::move(*$2));
         delete $2;
     }
@@ -197,7 +192,7 @@ label: TCOLON2 TIDENTIFIER TCOLON2 {
      }
      ;
 
-assign: var TEQUAL expr {
+assign: var '=' expr {
           $$ = new NAssignment(
               std::unique_ptr<NExpr>($1),
               std::unique_ptr<NExpr>($3));
@@ -212,16 +207,16 @@ functioncall: prefixexpr args {
             ;
 
 expr: TNUMBER { $$ = new NNumberLiteral(std::move(*$1)); delete $1; }
-    | prefixexpr %prec TRPAREN { $$ = $1; }
+    | prefixexpr %prec ')' { $$ = $1; }
     ;
 
 var: TIDENTIFIER { $$ = new NIdent(std::move(*$1)); delete $1; }
-   | prefixexpr TLSQBR expr TRSQBR {
+   | prefixexpr '[' expr ']' {
        $$ = new NSubscript(
            std::unique_ptr<NExpr>($1),
            std::unique_ptr<NExpr>($3));
    }
-   | prefixexpr TDOT TIDENTIFIER {
+   | prefixexpr '.' TIDENTIFIER {
        $$ = new NTableAccess(
            std::unique_ptr<NExpr>($1),
            std::move(*$3));
@@ -233,14 +228,14 @@ argseq: expr {
           $$ = new NArgSeq();
           $$->args.push_back(std::unique_ptr<NExpr>($1));
       }
-      | argseq TCOMMA expr {
+      | argseq ',' expr {
           $$ = $1;
           $$->args.push_back(std::unique_ptr<NExpr>($3));
       }
       ;
 
-args: TLPAREN TRPAREN { $$ = nullptr; }
-    | TLPAREN argseq TRPAREN { $$ = $2; }
+args: '(' ')' { $$ = nullptr; }
+    | '(' argseq ')' { $$ = $2; }
     ;
 
 %%
