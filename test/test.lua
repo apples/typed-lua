@@ -39,3 +39,11 @@ if effe then
 else
     horse()
 end
+
+for i = 1, 10, 2 do
+    f(i)
+end
+
+for i = 4, 22 do
+    df(i)
+end

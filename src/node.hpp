@@ -281,6 +281,35 @@ public:
     }
 };
 
+class NForIter : public Node {
+public:
+    NForIter() = default;
+    NForIter(std::string n, std::unique_ptr<NExpr> b, std::unique_ptr<NExpr> e, std::unique_ptr<NExpr> s, std::unique_ptr<NBlock> k) :
+        name(std::move(n)),
+        begin(std::move(b)),
+        end(std::move(e)),
+        step(std::move(s)),
+        block(std::move(k)) {}
+    std::string name;
+    std::unique_ptr<NExpr> begin;
+    std::unique_ptr<NExpr> end;
+    std::unique_ptr<NExpr> step;
+    std::unique_ptr<NBlock> block;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NForIter\n";
+        indent += "  ";
+        std::cout << indent << name << "\n";
+        begin->dump(indent);
+        end->dump(indent);
+        if (step) {
+            step->dump(indent);
+        }
+        block->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
 } // namespace typedlua::ast
 
 #endif // TYPEDLUA_NODE_HPP

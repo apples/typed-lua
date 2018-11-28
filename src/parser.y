@@ -50,7 +50,7 @@
 %token <token> TKLOCAL TKNIL TKNOT TKOR TKREPEAT TKRETURN
 %token <token> TKTHEN TKTRUE TKUNTIL TKWHILE
 
-%type <node> stat assign label goto while repeat if
+%type <node> stat assign label goto while repeat if foriter
 %type <block> block
 %type <expr> expr var functioncall prefixexpr
 %type <argseq> argseq args
@@ -97,7 +97,28 @@ stat: TSEMICOLON { $$ = new NEmpty(); }
     | while { $$ = $1; }
     | repeat { $$ = $1; }
     | if { $$ = $1; }
+    | foriter { $$ = $1; }
     ;
+
+foriter: TKFOR TIDENTIFIER TEQUAL expr TCOMMA expr TCOMMA expr TKDO block TKEND {
+           $$ = new NForIter(
+               std::move(*$2),
+               std::unique_ptr<NExpr>($4),
+               std::unique_ptr<NExpr>($6),
+               std::unique_ptr<NExpr>($8),
+               std::unique_ptr<NBlock>($10));
+           delete $2;
+       }
+       | TKFOR TIDENTIFIER TEQUAL expr TCOMMA expr TKDO block TKEND {
+           $$ = new NForIter(
+               std::move(*$2),
+               std::unique_ptr<NExpr>($4),
+               std::unique_ptr<NExpr>($6),
+               std::unique_ptr<NExpr>(nullptr),
+               std::unique_ptr<NBlock>($8));
+           delete $2;
+       }
+       ;
 
 if: TKIF expr TKTHEN block elseifseq else TKEND {
       $$ = new NIf(
