@@ -221,6 +221,66 @@ public:
     }
 };
 
+class NElseIf : public Node {
+public:
+    NElseIf() = default;
+    NElseIf(std::unique_ptr<NExpr> c, std::unique_ptr<NBlock> b) :
+        condition(std::move(c)),
+        block(std::move(b)) {}
+    std::unique_ptr<NExpr> condition;
+    std::unique_ptr<NBlock> block;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NElseIf\n";
+        indent += "  ";
+        condition->dump(indent);
+        block->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
+class NElse : public Node {
+public:
+    NElse() = default;
+    NElse(std::unique_ptr<NBlock> b) : block(std::move(b)) {}
+    std::unique_ptr<NBlock> block;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NElse\n";
+        indent += "  ";
+        block->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
+class NIf : public Node {
+public:
+    NIf() = default;
+    NIf(std::unique_ptr<NExpr> c, std::unique_ptr<NBlock> b, std::vector<std::unique_ptr<NElseIf>> ei, std::unique_ptr<NElse> e) :
+        condition(std::move(c)),
+        block(std::move(b)),
+        elseifs(std::move(ei)),
+        else_(std::move(e)) {}
+    std::unique_ptr<NExpr> condition;
+    std::unique_ptr<NBlock> block;
+    std::vector<std::unique_ptr<NElseIf>> elseifs;
+    std::unique_ptr<NElse> else_;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NIf\n";
+        indent += "  ";
+        condition->dump(indent);
+        block->dump(indent);
+        for (const auto& elseif : elseifs) {
+            elseif->dump(indent);
+        }
+        if (else_) {
+            else_->dump(indent);
+        }
+        std::cout << indent << ")\n";
+    }
+};
+
 } // namespace typedlua::ast
 
 #endif // TYPEDLUA_NODE_HPP

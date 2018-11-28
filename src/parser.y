@@ -23,6 +23,9 @@
     NBlock* block;
     NExpr* expr;
     NArgSeq* argseq;
+    std::vector<std::unique_ptr<NElseIf>>* elseifseq;
+    NElseIf* elseif;
+    NElse* else_;
 }
 
 %destructor { delete $$; } <string>
@@ -30,6 +33,9 @@
 %destructor { delete $$; } <block>
 %destructor { delete $$; } <expr>
 %destructor { delete $$; } <argseq>
+%destructor { delete $$; } <elseifseq>
+%destructor { delete $$; } <elseif>
+%destructor { delete $$; } <else_>
 
 %token <string> TIDENTIFIER TNUMBER TSTRING
 %token <token> TEQUAL
@@ -44,10 +50,13 @@
 %token <token> TKLOCAL TKNIL TKNOT TKOR TKREPEAT TKRETURN
 %token <token> TKTHEN TKTRUE TKUNTIL TKWHILE
 
-%type <node> stat assign label goto while repeat
+%type <node> stat assign label goto while repeat if
 %type <block> block
 %type <expr> expr var functioncall prefixexpr
 %type <argseq> argseq args
+%type <elseifseq> elseifseq
+%type <elseif> elseif
+%type <else_> else
 
 %left TPLUS TMINUS
 %left TSTAR TSLASH TSLASH2
@@ -87,6 +96,58 @@ stat: TSEMICOLON { $$ = new NEmpty(); }
     | TKDO block TKEND { $$ = $2; }
     | while { $$ = $1; }
     | repeat { $$ = $1; }
+    | if { $$ = $1; }
+    ;
+
+if: TKIF expr TKTHEN block elseifseq else TKEND {
+      $$ = new NIf(
+          std::unique_ptr<NExpr>($2),
+          std::unique_ptr<NBlock>($4),
+          std::move(*$5),
+          std::unique_ptr<NElse>($6));
+      delete $5;
+  }
+  | TKIF expr TKTHEN block elseifseq TKEND {
+      $$ = new NIf(
+          std::unique_ptr<NExpr>($2),
+          std::unique_ptr<NBlock>($4),
+          std::move(*$5),
+          std::unique_ptr<NElse>(nullptr));
+      delete $5;
+  }
+  | TKIF expr TKTHEN block else TKEND {
+      $$ = new NIf(
+          std::unique_ptr<NExpr>($2),
+          std::unique_ptr<NBlock>($4),
+          {},
+          std::unique_ptr<NElse>($5));
+  }
+  | TKIF expr TKTHEN block TKEND {
+      $$ = new NIf(
+          std::unique_ptr<NExpr>($2),
+          std::unique_ptr<NBlock>($4),
+          {},
+          std::unique_ptr<NElse>(nullptr));
+  }
+  ;
+
+elseifseq: elseif {
+             $$ = new std::vector<std::unique_ptr<NElseIf>>();
+             $$->push_back(std::unique_ptr<NElseIf>($1));
+         }
+         | elseifseq elseif {
+             $$ = $1;
+             $$->push_back(std::unique_ptr<NElseIf>($2));
+         }
+         ;
+
+elseif: TKELSEIF expr TKTHEN block {
+          $$ = new NElseIf(
+              std::unique_ptr<NExpr>($2), std::unique_ptr<NBlock>($4));
+      }
+      ;
+
+else: TKELSE block { $$ = new NElse(std::unique_ptr<NBlock>($2)); }
     ;
 
 repeat: TKREPEAT block TKUNTIL expr {

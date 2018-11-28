@@ -15,3 +15,27 @@ repeat
     df()()
     ffff()
 until horse(3)
+
+if adsf then
+    fdsf()
+end
+
+if esdf then
+    fidj()
+elseif iejf then
+    dfokdo()
+elseif eee then
+    okok()
+else
+    dijijeeee = asdfij
+end
+
+if effe then
+    if  ijidf then
+        jaidsjfij()
+    elseif ddd then
+        fok()
+    end
+else
+    horse()
+end
