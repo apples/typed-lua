@@ -10,3 +10,8 @@ end
 while fund() do
     asd = f(d)
 end
+
+repeat
+    df()()
+    ffff()
+until horse(3)

@@ -41,7 +41,7 @@ public:
     std::string name;
 
     virtual void dump(std::string prefix) const override {
-        std::cout << prefix << "(NIdent name)\n";
+        std::cout << prefix << "(NIdent " << name << ")\n";
     }
 };
 
@@ -199,6 +199,24 @@ public:
         indent += "  ";
         condition->dump(indent);
         block->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
+class NRepeat : public Node {
+public:
+    NRepeat() = default;
+    NRepeat(std::unique_ptr<NBlock> b, std::unique_ptr<NExpr> u) :
+        block(std::move(b)),
+        until(std::move(u)) {}
+    std::unique_ptr<NBlock> block;
+    std::unique_ptr<NExpr> until;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NRepeat\n";
+        indent += "  ";
+        block->dump(indent);
+        until->dump(indent);
         std::cout << indent << ")\n";
     }
 };

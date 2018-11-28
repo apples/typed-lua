@@ -44,7 +44,7 @@
 %token <token> TKLOCAL TKNIL TKNOT TKOR TKREPEAT TKRETURN
 %token <token> TKTHEN TKTRUE TKUNTIL TKWHILE
 
-%type <node> stat assign label goto while
+%type <node> stat assign label goto while repeat
 %type <block> block
 %type <expr> expr var functioncall prefixexpr
 %type <argseq> argseq args
@@ -60,97 +60,105 @@
 
 %%
 
-chunk : block { root = $1; }
-      ;
-
-block : stat {
-          $$ = new NBlock();
-          $$->children.push_back(std::unique_ptr<Node>($1));
-      }
-      | block stat {
-          $$ = $1;
-          $$->children.push_back(std::unique_ptr<Node>($2));
-      }
-      ;
-
-prefixexpr : var { $$ = $1; }
-           | functioncall { $$ = $1; }
-           | TLPAREN expr TRPAREN { $$ = $2; }
-           ;
-
-stat : TSEMICOLON { $$ = new NEmpty(); }
-     | assign { $$ = $1; }
-     | functioncall { $$ = $1; }
-     | label { $$ = $1; }
-     | TKBREAK { $$ = new NBreak(); }
-     | goto { $$ = $1; }
-     | TKDO block TKEND { $$ = $2; }
-     | while { $$ = $1; }
+chunk: block { root = $1; }
      ;
 
-while : TKWHILE expr TKDO block TKEND {
-          $$ = new NWhile(
-              std::unique_ptr<NExpr>($2),
-              std::unique_ptr<NBlock>($4));
+block: stat {
+         $$ = new NBlock();
+         $$->children.push_back(std::unique_ptr<Node>($1));
+     }
+     | block stat {
+         $$ = $1;
+         $$->children.push_back(std::unique_ptr<Node>($2));
+     }
+     ;
+
+prefixexpr: var { $$ = $1; }
+          | functioncall { $$ = $1; }
+          | TLPAREN expr TRPAREN { $$ = $2; }
+          ;
+
+stat: TSEMICOLON { $$ = new NEmpty(); }
+    | assign { $$ = $1; }
+    | functioncall { $$ = $1; }
+    | label { $$ = $1; }
+    | TKBREAK { $$ = new NBreak(); }
+    | goto { $$ = $1; }
+    | TKDO block TKEND { $$ = $2; }
+    | while { $$ = $1; }
+    | repeat { $$ = $1; }
+    ;
+
+repeat: TKREPEAT block TKUNTIL expr {
+          $$ = new NRepeat(
+              std::unique_ptr<NBlock>($2),
+              std::unique_ptr<NExpr>($4));
       }
       ;
 
-goto : TKGOTO TIDENTIFIER {
-         $$ = new NGoto(std::move(*$2));
+while: TKWHILE expr TKDO block TKEND {
+         $$ = new NWhile(
+             std::unique_ptr<NExpr>($2),
+             std::unique_ptr<NBlock>($4));
+     }
+     ;
+
+goto: TKGOTO TIDENTIFIER {
+        $$ = new NGoto(std::move(*$2));
+        delete $2;
+    }
+    ;
+
+label: TCOLON2 TIDENTIFIER TCOLON2 {
+         $$ = new NLabel(std::move(*$2));
          delete $2;
      }
      ;
 
-label : TCOLON2 TIDENTIFIER TCOLON2 {
-          $$ = new NLabel(std::move(*$2));
-          delete $2;
+assign: var TEQUAL expr {
+          $$ = new NAssignment(
+              std::unique_ptr<NExpr>($1),
+              std::unique_ptr<NExpr>($3));
       }
       ;
 
-assign : var TEQUAL expr {
-           $$ = new NAssignment(
-               std::unique_ptr<NExpr>($1),
-               std::unique_ptr<NExpr>($3));
-       }
-       ;
+functioncall: prefixexpr args {
+                $$ = new NFunctionCall(
+                    std::unique_ptr<NExpr>($1),
+                    std::unique_ptr<NArgSeq>($2));
+            }
+            ;
 
-functioncall : prefixexpr args {
-                 $$ = new NFunctionCall(
-                     std::unique_ptr<NExpr>($1),
-                     std::unique_ptr<NArgSeq>($2));
-             }
-             ;
-
-expr : TNUMBER { $$ = new NNumberLiteral(std::move(*$1)); delete $1; }
-     | prefixexpr %prec TRPAREN { $$ = $1; }
-     ;
-
-var : TIDENTIFIER { $$ = new NIdent(std::move(*$1)); delete $1; }
-    | prefixexpr TLSQBR expr TRSQBR {
-        $$ = new NSubscript(
-            std::unique_ptr<NExpr>($1),
-            std::unique_ptr<NExpr>($3));
-    }
-    | prefixexpr TDOT TIDENTIFIER {
-        $$ = new NTableAccess(
-            std::unique_ptr<NExpr>($1),
-            std::move(*$3));
-        delete $3;
-    }
+expr: TNUMBER { $$ = new NNumberLiteral(std::move(*$1)); delete $1; }
+    | prefixexpr %prec TRPAREN { $$ = $1; }
     ;
 
-argseq : expr {
-           $$ = new NArgSeq();
-           $$->args.push_back(std::unique_ptr<NExpr>($1));
-       }
-       | argseq TCOMMA expr {
-           $$ = $1;
-           $$->args.push_back(std::unique_ptr<NExpr>($3));
-       }
-       ;
+var: TIDENTIFIER { $$ = new NIdent(std::move(*$1)); delete $1; }
+   | prefixexpr TLSQBR expr TRSQBR {
+       $$ = new NSubscript(
+           std::unique_ptr<NExpr>($1),
+           std::unique_ptr<NExpr>($3));
+   }
+   | prefixexpr TDOT TIDENTIFIER {
+       $$ = new NTableAccess(
+           std::unique_ptr<NExpr>($1),
+           std::move(*$3));
+       delete $3;
+   }
+   ;
 
-args : TLPAREN TRPAREN { $$ = nullptr; }
-     | TLPAREN argseq TRPAREN { $$ = $2; }
-     ;
+argseq: expr {
+          $$ = new NArgSeq();
+          $$->args.push_back(std::unique_ptr<NExpr>($1));
+      }
+      | argseq TCOMMA expr {
+          $$ = $1;
+          $$->args.push_back(std::unique_ptr<NExpr>($3));
+      }
+      ;
+
+args: TLPAREN TRPAREN { $$ = nullptr; }
+    | TLPAREN argseq TRPAREN { $$ = $2; }
+    ;
 
 %%
