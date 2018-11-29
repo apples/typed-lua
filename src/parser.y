@@ -314,7 +314,12 @@ functioncall: prefixexpr args {
             }
             ;
 
-expr: TNUMBER { $$ = new NNumberLiteral(std::move(*$1)); delete $1; }
+expr: TNIL { $$ = new NNil(); }
+    | TFALSE { $$ = new NBooleanLiteral(false); }
+    | TTRUE { $$ = new NBooleanLiteral(true); }
+    | TNUMBER { $$ = new NNumberLiteral(std::move(*$1)); delete $1; }
+    | TSTRING { $$ = new NStringLiteral(std::move(*$1)); delete $1; }
+    | TDOT3 { $$ = new NDots(); }
     | prefixexpr %prec ')' { $$ = $1; }
     ;
 

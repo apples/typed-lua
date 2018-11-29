@@ -76,3 +76,10 @@ local sd, wewee
 local sd = 3
 
 x, y = 7, 42
+
+a = "ad's\"f"
+b = 'asdf"df\''
+c = nil
+d = true
+e = false
+func(...)

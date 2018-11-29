@@ -468,6 +468,43 @@ public:
     }
 };
 
+class NNil : public NExpr {
+public:
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NNil)\n";
+    }
+};
+
+class NBooleanLiteral : public NExpr {
+public:
+    NBooleanLiteral() = default;
+    NBooleanLiteral(bool v) : value(v) {}
+    bool value;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NBooleanLiteral "
+            << (value ? "true" : "false") << ")\n";
+    }
+};
+
+class NStringLiteral : public NExpr {
+public:
+    NStringLiteral() = default;
+    NStringLiteral(std::string v) : value(std::move(v)) {}
+    std::string value;
+
+    virtual void dump(std::string prefix) const override {
+        std::cout << prefix << "(NStringLiteral " << value << ")\n";
+    }
+};
+
+class NDots : public NExpr {
+public:
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NDots)\n";
+    }
+};
+
 } // namespace typedlua::ast
 
 #endif // TYPEDLUA_NODE_HPP
