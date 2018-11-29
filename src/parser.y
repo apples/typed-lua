@@ -342,14 +342,16 @@ fieldlist: field {
              $$ = new std::vector<std::unique_ptr<NField>>();
              $$->push_back(std::unique_ptr<NField>($field));
          }
-         | fieldlist ',' field {
+         | fieldlist fieldsep field {
              $$ = $1;
              $$->push_back(std::unique_ptr<NField>($field));
          }
-         | fieldlist ',' {
+         | fieldlist fieldsep {
              $$ = $1;
          }
          ;
+
+fieldsep: ',' | ';' ;
 
 field: expr { $$ = new NFieldExpr(std::unique_ptr<NExpr>($expr)); }
      | TIDENTIFIER[name] '=' expr {

@@ -88,4 +88,4 @@ local f = function() return 42 end
 
 asd = {}
 
-fefe = { 54, df = "asdf", [fun()] = 42, }
+fefe = { 54, df = "asdf"; [fun()] = 42, }
