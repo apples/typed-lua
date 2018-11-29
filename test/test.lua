@@ -68,3 +68,9 @@ function dfkjd.dijie:horse()
     if dfd then return end
     return
 end
+
+local asdf, asde = 32, 34
+
+local sd, wewee
+
+local sd = 3

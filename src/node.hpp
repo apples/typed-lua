@@ -421,7 +421,6 @@ public:
     }
 };
 
-
 class NReturn : public Node {
 public:
     NReturn() = default;
@@ -431,6 +430,28 @@ public:
     virtual void dump(std::string indent) const override {
         std::cout << indent << "(NReturn\n";
         indent += "  ";
+        for (const auto& expr : exprs) {
+            expr->dump(indent);
+        }
+        std::cout << indent << ")\n";
+    }
+};
+
+class NLocalVar : public Node {
+public:
+    NLocalVar() = default;
+    NLocalVar(std::vector<std::string> n, std::vector<std::unique_ptr<NExpr>> e) :
+        names(std::move(n)),
+        exprs(std::move(e)) {}
+    std::vector<std::string> names;
+    std::vector<std::unique_ptr<NExpr>> exprs;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NLocalVar\n";
+        indent += "  ";
+        for (const auto& name : names) {
+            std::cout << indent << name << "\n";
+        }
         for (const auto& expr : exprs) {
             expr->dump(indent);
         }

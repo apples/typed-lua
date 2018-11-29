@@ -55,7 +55,7 @@
 %left '('
 
 %type <node> stat assign label goto while repeat if fornumeric forgeneric
-%type <node> function localfunc retstat
+%type <node> function localfunc retstat localvar
 %type <block> block statseq
 %type <expr> expr var functioncall prefixexpr funcvar
 %type <argseq> argseq args
@@ -134,7 +134,23 @@ stat: ';' { $$ = new NEmpty(); }
     | forgeneric { $$ = $1; }
     | function { $$ = $1; }
     | localfunc { $$ = $1; }
+    | localvar { $$ = $1; }
     ;
+
+localvar: TLOCAL namelist {
+            $$ = new NLocalVar(
+                std::move(*$namelist),
+                {});
+            delete $namelist;
+        }
+        | TLOCAL namelist '=' explist {
+            $$ = new NLocalVar(
+                std::move(*$namelist),
+                std::move(*$explist));
+            delete $namelist;
+            delete $explist;
+        }
+        ;
 
 localfunc: TLOCAL TFUNCTION TIDENTIFIER[name] funcparams block TEND {
              $$ = new NLocalFunction(
