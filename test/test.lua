@@ -52,7 +52,7 @@ for k,v in pairs(horse) do
     k(v)
 end
 
-function asdf()
+local function asdf()
     dijfidj()
     a = 7
     return a
