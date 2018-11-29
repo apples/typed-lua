@@ -37,6 +37,8 @@
 %destructor { delete $$; } <elseifseq>
 %destructor { delete $$; } <elseif>
 %destructor { delete $$; } <else_>
+%destructor { delete $$; } <strings>
+%destructor { delete $$; } <exprs>
 
 %token TCEQ TCNE TCLE TCGE
 %token TSLASH2 TDOT2 TDOT3 TCOLON2
@@ -52,8 +54,9 @@
 %left ')'
 %left '('
 
-%type <node> stat assign label goto while repeat if fornumeric forgeneric function
-%type <block> block
+%type <node> stat assign label goto while repeat if fornumeric forgeneric
+%type <node> function retstat
+%type <block> block statseq
 %type <expr> expr var functioncall prefixexpr funcvar
 %type <argseq> argseq args
 %type <elseifseq> elseifseq
@@ -71,15 +74,34 @@
 chunk: block { root = $1; }
      ;
 
-block: stat {
-         $$ = new NBlock();
-         $$->children.push_back(std::unique_ptr<Node>($1));
-     }
-     | block stat {
+block: statseq { $$ = $1; }
+     | statseq retstat {
          $$ = $1;
-         $$->children.push_back(std::unique_ptr<Node>($2));
+         $$->children.push_back(std::unique_ptr<Node>($retstat));
+     }
+     | retstat {
+         $$ = new NBlock();
+         $$->children.push_back(std::unique_ptr<Node>($retstat));
      }
      ;
+
+statseq: stat {
+           $$ = new NBlock();
+           $$->children.push_back(std::unique_ptr<Node>($1));
+       }
+       | statseq stat {
+           $$ = $1;
+           $$->children.push_back(std::unique_ptr<Node>($2));
+       }
+       ;
+
+retstat: TRETURN { $$ = new NReturn(); }
+       | TRETURN explist {
+           $$ = new NReturn(std::move(*$explist));
+           delete $explist;
+       }
+       | retstat ';' { $$ = $1; }
+       ;
 
 prefixexpr: var { $$ = $1; }
           | functioncall { $$ = $1; }

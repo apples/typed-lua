@@ -395,6 +395,22 @@ public:
     }
 };
 
+class NReturn : public Node {
+public:
+    NReturn() = default;
+    NReturn(std::vector<std::unique_ptr<NExpr>> e) : exprs(std::move(e)) {}
+    std::vector<std::unique_ptr<NExpr>> exprs;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NReturn\n";
+        indent += "  ";
+        for (const auto& expr : exprs) {
+            expr->dump(indent);
+        }
+        std::cout << indent << ")\n";
+    }
+};
+
 } // namespace typedlua::ast
 
 #endif // TYPEDLUA_NODE_HPP

@@ -55,12 +55,16 @@ end
 function asdf()
     dijfidj()
     a = 7
+    return a
 end
 
 function dfd.fefk.foks.foeee(dfdf, erer)
     dijdifj = 9
+    return asdf, 83
 end
 
 function dfkjd.dijie:horse()
     print(herse)
+    if dfd then return end
+    return
 end
