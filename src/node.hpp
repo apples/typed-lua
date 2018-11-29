@@ -528,6 +528,75 @@ public:
     }
 };
 
+class NField : public Node {
+};
+
+class NFieldExpr : public NField {
+public:
+    NFieldExpr() = default;
+    NFieldExpr(std::unique_ptr<NExpr> e) : expr(std::move(e)) {}
+    std::unique_ptr<NExpr> expr;
+    
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NFieldExpr\n";
+        indent += "  ";
+        expr->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
+class NFieldNamed : public NField {
+public:
+    NFieldNamed() = default;
+    NFieldNamed(std::string k, std::unique_ptr<NExpr> v) :
+        key(std::move(k)),
+        value(std::move(v)) {}
+    std::string key;
+    std::unique_ptr<NExpr> value;
+    
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NFieldNamed\n";
+        indent += "  ";
+        std::cout << indent << key << "\n";
+        value->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
+class NFieldKey : public NField {
+public:
+    NFieldKey() = default;
+    NFieldKey(std::unique_ptr<NExpr> k, std::unique_ptr<NExpr> v) :
+        key(std::move(k)),
+        value(std::move(v)) {}
+    std::unique_ptr<NExpr> key;
+    std::unique_ptr<NExpr> value;
+    
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NFieldKey\n";
+        indent += "  ";
+        key->dump(indent);
+        value->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
+class NTableConstructor : public NExpr {
+public:
+    NTableConstructor() = default;
+    NTableConstructor(std::vector<std::unique_ptr<NField>> f) : fields(std::move(f)) {}
+    std::vector<std::unique_ptr<NField>> fields;
+    
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NTableConstructor\n";
+        indent += "  ";
+        for (const auto& field : fields) {
+            field->dump(indent);
+        }
+        std::cout << indent << ")\n";
+    }
+};
+
 } // namespace typedlua::ast
 
 #endif // TYPEDLUA_NODE_HPP

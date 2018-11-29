@@ -27,6 +27,8 @@
     NElse* else_;
     std::vector<std::string>* strings;
     std::vector<std::unique_ptr<NExpr>>* exprs;
+    NField* field;
+    std::vector<std::unique_ptr<NField>>* fields;
 }
 
 %destructor { delete $$; } <string>
@@ -39,6 +41,8 @@
 %destructor { delete $$; } <else_>
 %destructor { delete $$; } <strings>
 %destructor { delete $$; } <exprs>
+%destructor { delete $$; } <field>
+%destructor { delete $$; } <fields>
 
 %token TCEQ TCNE TCLE TCGE
 %token TSLASH2 TDOT2 TDOT3 TCOLON2
@@ -57,13 +61,15 @@
 %type <node> stat assign label goto while repeat if fornumeric forgeneric
 %type <node> function localfunc retstat localvar
 %type <block> block statseq
-%type <expr> expr var functioncall prefixexpr funcvar functiondef
+%type <expr> expr var functioncall prefixexpr funcvar functiondef tableconstructor
 %type <argseq> argseq args
 %type <elseifseq> elseifseq
 %type <elseif> elseif
 %type <else_> else
 %type <strings> namelist funcparams
 %type <exprs> explist varlist
+%type <field> field
+%type <fields> fieldlist
 
 %start chunk
 
@@ -322,7 +328,42 @@ expr: TNIL { $$ = new NNil(); }
     | TDOT3 { $$ = new NDots(); }
     | functiondef { $$ = $1; }
     | prefixexpr %prec ')' { $$ = $1; }
+    | tableconstructor { $$ = $1; }
     ;
+
+tableconstructor: '{' '}' { $$ = new NTableConstructor(); }
+                | '{' fieldlist '}' {
+                    $$ = new NTableConstructor(std::move(*$fieldlist));
+                    delete $fieldlist;
+                }
+                ;
+
+fieldlist: field {
+             $$ = new std::vector<std::unique_ptr<NField>>();
+             $$->push_back(std::unique_ptr<NField>($field));
+         }
+         | fieldlist ',' field {
+             $$ = $1;
+             $$->push_back(std::unique_ptr<NField>($field));
+         }
+         | fieldlist ',' {
+             $$ = $1;
+         }
+         ;
+
+field: expr { $$ = new NFieldExpr(std::unique_ptr<NExpr>($expr)); }
+     | TIDENTIFIER[name] '=' expr {
+         $$ = new NFieldNamed(
+             std::move(*$name),
+             std::unique_ptr<NExpr>($expr));
+         delete $name;
+     }
+     | '[' expr[key] ']' '=' expr[value] {
+         $$ = new NFieldKey(
+             std::unique_ptr<NExpr>($key),
+             std::unique_ptr<NExpr>($value));
+     }
+     ;
 
 functiondef: TFUNCTION funcparams block TEND {
                $$ = new NFunctionDef(

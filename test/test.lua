@@ -85,3 +85,7 @@ e = false
 func(...)
 
 local f = function() return 42 end
+
+asd = {}
+
+fefe = { 54, df = "asdf", [fun()] = 42, }
