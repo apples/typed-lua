@@ -83,3 +83,5 @@ c = nil
 d = true
 e = false
 func(...)
+
+local f = function() return 42 end

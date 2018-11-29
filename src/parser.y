@@ -57,7 +57,7 @@
 %type <node> stat assign label goto while repeat if fornumeric forgeneric
 %type <node> function localfunc retstat localvar
 %type <block> block statseq
-%type <expr> expr var functioncall prefixexpr funcvar
+%type <expr> expr var functioncall prefixexpr funcvar functiondef
 %type <argseq> argseq args
 %type <elseifseq> elseifseq
 %type <elseif> elseif
@@ -320,8 +320,17 @@ expr: TNIL { $$ = new NNil(); }
     | TNUMBER { $$ = new NNumberLiteral(std::move(*$1)); delete $1; }
     | TSTRING { $$ = new NStringLiteral(std::move(*$1)); delete $1; }
     | TDOT3 { $$ = new NDots(); }
+    | functiondef { $$ = $1; }
     | prefixexpr %prec ')' { $$ = $1; }
     ;
+
+functiondef: TFUNCTION funcparams block TEND {
+               $$ = new NFunctionDef(
+                   std::move(*$funcparams),
+                   std::unique_ptr<NBlock>($block));
+               delete $funcparams;
+           }
+           ;
 
 explist: expr {
            $$ = new std::vector<std::unique_ptr<NExpr>>();

@@ -505,6 +505,29 @@ public:
     }
 };
 
+class NFunctionDef : public NExpr {
+public:
+    NFunctionDef() = default;
+    NFunctionDef(std::vector<std::string> p, std::unique_ptr<NBlock> b) :
+        params(std::move(p)),
+        block(std::move(b)) {}
+    std::vector<std::string> params;
+    std::unique_ptr<NBlock> block;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NFunctionDef\n";
+        indent += "  ";
+        std::cout << indent << "([params]\n";
+        const auto indent2 = indent + "  ";
+        for (const auto& param : params) {
+            std::cout << indent2 << param << "\n";
+        }
+        std::cout << indent2 << ")\n";
+        block->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
 } // namespace typedlua::ast
 
 #endif // TYPEDLUA_NODE_HPP
