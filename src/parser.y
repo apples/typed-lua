@@ -25,6 +25,8 @@
     std::vector<std::unique_ptr<NElseIf>>* elseifseq;
     NElseIf* elseif;
     NElse* else_;
+    std::vector<std::string>* strings;
+    std::vector<std::unique_ptr<NExpr>>* exprs;
 }
 
 %destructor { delete $$; } <string>
@@ -50,13 +52,15 @@
 %left ')'
 %left '('
 
-%type <node> stat assign label goto while repeat if foriter
+%type <node> stat assign label goto while repeat if fornumeric forgeneric
 %type <block> block
 %type <expr> expr var functioncall prefixexpr
 %type <argseq> argseq args
 %type <elseifseq> elseifseq
 %type <elseif> elseif
 %type <else_> else
+%type <strings> namelist
+%type <exprs> explist
 
 %start chunk
 
@@ -82,6 +86,18 @@ prefixexpr: var { $$ = $1; }
           | '(' expr ')' { $$ = $2; }
           ;
 
+namelist: TIDENTIFIER {
+            $$ = new std::vector<std::string>();
+            $$->push_back(std::move(*$1));
+            delete $1;
+        }
+        | namelist ',' TIDENTIFIER {
+            $$ = $1;
+            $$->push_back(std::move(*$3));
+            delete $3;
+        }
+        ;
+
 stat: ';' { $$ = new NEmpty(); }
     | assign { $$ = $1; }
     | functioncall { $$ = $1; }
@@ -92,28 +108,39 @@ stat: ';' { $$ = new NEmpty(); }
     | while { $$ = $1; }
     | repeat { $$ = $1; }
     | if { $$ = $1; }
-    | foriter { $$ = $1; }
+    | fornumeric { $$ = $1; }
+    | forgeneric { $$ = $1; }
     ;
 
-foriter: TFOR TIDENTIFIER '=' expr ',' expr ',' expr TDO block TEND {
-           $$ = new NForIter(
-               std::move(*$2),
-               std::unique_ptr<NExpr>($4),
-               std::unique_ptr<NExpr>($6),
-               std::unique_ptr<NExpr>($8),
-               std::unique_ptr<NBlock>($10));
-           delete $2;
-       }
-       | TFOR TIDENTIFIER '=' expr ',' expr TDO block TEND {
-           $$ = new NForIter(
-               std::move(*$2),
-               std::unique_ptr<NExpr>($4),
-               std::unique_ptr<NExpr>($6),
-               std::unique_ptr<NExpr>(nullptr),
-               std::unique_ptr<NBlock>($8));
-           delete $2;
+forgeneric: TFOR namelist TIN explist TDO block TEND {
+           $$ = new NForGeneric(
+               std::move(*$namelist),
+               std::move(*$explist),
+               std::unique_ptr<NBlock>($block));
+           delete $namelist;
+           delete $explist;
        }
        ;
+
+fornumeric: TFOR TIDENTIFIER '=' expr ',' expr ',' expr TDO block TEND {
+              $$ = new NForNumeric(
+                  std::move(*$2),
+                  std::unique_ptr<NExpr>($4),
+                  std::unique_ptr<NExpr>($6),
+                  std::unique_ptr<NExpr>($8),
+                  std::unique_ptr<NBlock>($10));
+              delete $2;
+          }
+          | TFOR TIDENTIFIER '=' expr ',' expr TDO block TEND {
+              $$ = new NForNumeric(
+                  std::move(*$2),
+                  std::unique_ptr<NExpr>($4),
+                  std::unique_ptr<NExpr>($6),
+                  std::unique_ptr<NExpr>(nullptr),
+                  std::unique_ptr<NBlock>($8));
+              delete $2;
+          }
+          ;
 
 if: TIF expr TTHEN block elseifseq else TEND {
       $$ = new NIf(
@@ -209,6 +236,16 @@ functioncall: prefixexpr args {
 expr: TNUMBER { $$ = new NNumberLiteral(std::move(*$1)); delete $1; }
     | prefixexpr %prec ')' { $$ = $1; }
     ;
+
+explist: expr {
+           $$ = new std::vector<std::unique_ptr<NExpr>>();
+           $$->push_back(std::unique_ptr<NExpr>($1));
+       }
+       | explist ',' expr {
+           $$ = $1;
+           $$->push_back(std::unique_ptr<NExpr>($3));
+       }
+       ;
 
 var: TIDENTIFIER { $$ = new NIdent(std::move(*$1)); delete $1; }
    | prefixexpr '[' expr ']' {

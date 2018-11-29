@@ -47,3 +47,7 @@ end
 for i = 4, 22 do
     df(i)
 end
+
+for k,v in pairs(horse) do
+    k(v)
+end

@@ -281,10 +281,10 @@ public:
     }
 };
 
-class NForIter : public Node {
+class NForNumeric : public Node {
 public:
-    NForIter() = default;
-    NForIter(std::string n, std::unique_ptr<NExpr> b, std::unique_ptr<NExpr> e, std::unique_ptr<NExpr> s, std::unique_ptr<NBlock> k) :
+    NForNumeric() = default;
+    NForNumeric(std::string n, std::unique_ptr<NExpr> b, std::unique_ptr<NExpr> e, std::unique_ptr<NExpr> s, std::unique_ptr<NBlock> k) :
         name(std::move(n)),
         begin(std::move(b)),
         end(std::move(e)),
@@ -297,7 +297,7 @@ public:
     std::unique_ptr<NBlock> block;
 
     virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NForIter\n";
+        std::cout << indent << "(NForNumeric\n";
         indent += "  ";
         std::cout << indent << name << "\n";
         begin->dump(indent);
@@ -305,6 +305,36 @@ public:
         if (step) {
             step->dump(indent);
         }
+        block->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
+class NForGeneric : public Node {
+public:
+    NForGeneric() = default;
+    NForGeneric(std::vector<std::string> n, std::vector<std::unique_ptr<NExpr>> e, std::unique_ptr<NBlock> b) :
+        names(std::move(n)),
+        exprs(std::move(e)),
+        block(std::move(b)) {}
+    std::vector<std::string> names;
+    std::vector<std::unique_ptr<NExpr>> exprs;
+    std::unique_ptr<NBlock> block;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NForGeneric\n";
+        indent += "  ";
+        auto indent2 = indent + "  ";
+        std::cout << indent << "([names]\n";
+        for (const auto& name : names) {
+            std::cout << indent2 << name << "\n";
+        }
+        std::cout << indent2 << ")" << "\n";
+        std::cout << indent << "([exprs]\n";
+        for (const auto& expr : exprs) {
+            expr->dump(indent2);
+        }
+        std::cout << indent2 << ")\n";
         block->dump(indent);
         std::cout << indent << ")\n";
     }
