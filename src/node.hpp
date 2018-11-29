@@ -130,17 +130,26 @@ public:
 class NAssignment : public Node {
 public:
     NAssignment() = default;
-    NAssignment(std::unique_ptr<NExpr> d, std::unique_ptr<NExpr> v) :
-        dest(std::move(d)),
-        value(std::move(v)) {}
-    std::unique_ptr<NExpr> dest;
-    std::unique_ptr<NExpr> value;
+    NAssignment(std::vector<std::unique_ptr<NExpr>> v, std::vector<std::unique_ptr<NExpr>> e) :
+        vars(std::move(v)),
+        exprs(std::move(e)) {}
+    std::vector<std::unique_ptr<NExpr>> vars;
+    std::vector<std::unique_ptr<NExpr>> exprs;
 
     virtual void dump(std::string indent) const override {
         std::cout << indent << "(NAssignment\n";
         indent += "  ";
-        dest->dump(indent);
-        value->dump(indent);
+        const auto indent2 = indent + "  ";
+        std::cout << indent << "([vars]\n";
+        for (const auto& var : vars) {
+            var->dump(indent2);
+        }
+        std::cout << indent2 << ")\n";
+        std::cout << indent << "([exprs]\n";
+        for (const auto& expr : exprs) {
+            expr->dump(indent2);
+        }
+        std::cout << indent2 << ")\n";
         std::cout << indent << ")\n";
     }
 };

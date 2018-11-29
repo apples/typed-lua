@@ -63,7 +63,7 @@
 %type <elseif> elseif
 %type <else_> else
 %type <strings> namelist funcparams
-%type <exprs> explist
+%type <exprs> explist varlist
 
 %start chunk
 
@@ -300,10 +300,10 @@ label: TCOLON2 TIDENTIFIER TCOLON2 {
      }
      ;
 
-assign: var '=' expr {
+assign: varlist '=' explist {
           $$ = new NAssignment(
-              std::unique_ptr<NExpr>($1),
-              std::unique_ptr<NExpr>($3));
+              std::move(*$varlist),
+              std::move(*$explist));
       }
       ;
 
@@ -341,6 +341,16 @@ var: TIDENTIFIER { $$ = new NIdent(std::move(*$1)); delete $1; }
        delete $3;
    }
    ;
+
+varlist: var {
+           $$ = new std::vector<std::unique_ptr<NExpr>>();
+           $$->push_back(std::unique_ptr<NExpr>($var));
+       }
+       | varlist ',' var {
+           $$ = $1;
+           $$->push_back(std::unique_ptr<NExpr>($var));
+       }
+       ;
 
 argseq: expr {
           $$ = new NArgSeq();

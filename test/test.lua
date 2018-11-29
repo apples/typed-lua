@@ -74,3 +74,5 @@ local asdf, asde = 32, 34
 local sd, wewee
 
 local sd = 3
+
+x, y = 7, 42
