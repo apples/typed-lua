@@ -51,3 +51,16 @@ end
 for k,v in pairs(horse) do
     k(v)
 end
+
+function asdf()
+    dijfidj()
+    a = 7
+end
+
+function dfd.fefk.foks.foeee(dfdf, erer)
+    dijdifj = 9
+end
+
+function dfkjd.dijie:horse()
+    print(herse)
+end

@@ -340,6 +340,61 @@ public:
     }
 };
 
+class NFunction : public Node {
+public:
+    NFunction() = default;
+    NFunction(std::unique_ptr<NExpr> e, std::vector<std::string> p, std::unique_ptr<NBlock> b) :
+        expr(std::move(e)),
+        params(std::move(p)),
+        block(std::move(b)) {}
+    std::unique_ptr<NExpr> expr;
+    std::vector<std::string> params;
+    std::unique_ptr<NBlock> block;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NFunction\n";
+        indent += "  ";
+        expr->dump(indent);
+        std::cout << indent << "([params]\n";
+        const auto indent2 = indent + "  ";
+        for (const auto& param : params) {
+            std::cout << indent2 << param << "\n";
+        }
+        std::cout << indent2 << ")\n";
+        block->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
+class NSelfFunction : public Node {
+public:
+    NSelfFunction() = default;
+    NSelfFunction(std::string m, std::unique_ptr<NExpr> e, std::vector<std::string> p, std::unique_ptr<NBlock> b) :
+        name(std::move(m)),
+        expr(std::move(e)),
+        params(std::move(p)),
+        block(std::move(b)) {}
+    std::string name;
+    std::unique_ptr<NExpr> expr;
+    std::vector<std::string> params;
+    std::unique_ptr<NBlock> block;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NSelfFunction\n";
+        indent += "  ";
+        std::cout << indent << name << "\n";
+        expr->dump(indent);
+        std::cout << indent << "([params]\n";
+        const auto indent2 = indent + "  ";
+        for (const auto& param : params) {
+            std::cout << indent2 << param << "\n";
+        }
+        std::cout << indent2 << ")\n";
+        block->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
 } // namespace typedlua::ast
 
 #endif // TYPEDLUA_NODE_HPP

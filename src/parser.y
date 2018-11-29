@@ -52,14 +52,14 @@
 %left ')'
 %left '('
 
-%type <node> stat assign label goto while repeat if fornumeric forgeneric
+%type <node> stat assign label goto while repeat if fornumeric forgeneric function
 %type <block> block
-%type <expr> expr var functioncall prefixexpr
+%type <expr> expr var functioncall prefixexpr funcvar
 %type <argseq> argseq args
 %type <elseifseq> elseifseq
 %type <elseif> elseif
 %type <else_> else
-%type <strings> namelist
+%type <strings> namelist funcparams
 %type <exprs> explist
 
 %start chunk
@@ -110,7 +110,39 @@ stat: ';' { $$ = new NEmpty(); }
     | if { $$ = $1; }
     | fornumeric { $$ = $1; }
     | forgeneric { $$ = $1; }
+    | function { $$ = $1; }
     ;
+
+function: TFUNCTION funcvar funcparams block TEND {
+            $$ = new NFunction(
+                std::unique_ptr<NExpr>($funcvar),
+                std::move(*$funcparams),
+                std::unique_ptr<NBlock>($block));
+            delete $funcparams;
+        }
+        | TFUNCTION funcvar ':' TIDENTIFIER[name] funcparams block TEND {
+            $$ = new NSelfFunction(
+                std::move(*$name),
+                std::unique_ptr<NExpr>($funcvar),
+                std::move(*$funcparams),
+                std::unique_ptr<NBlock>($block));
+            delete $name;
+            delete $funcparams;
+        }
+        ;
+
+funcvar: TIDENTIFIER { $$ = new NIdent(std::move(*$1)); delete $1; }
+       | funcvar '.' TIDENTIFIER {
+           $$ = new NTableAccess(
+               std::unique_ptr<NExpr>($1),
+               std::move(*$3));
+           delete $3;
+       }
+       ;
+
+funcparams: '(' ')' { $$ = new std::vector<std::string>(); }
+          | '(' namelist ')' { $$ = $namelist; }
+          ;
 
 forgeneric: TFOR namelist TIN explist TDO block TEND {
            $$ = new NForGeneric(
