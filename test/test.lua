@@ -100,3 +100,7 @@ c = (4 ~= 74 and "ddd" or 42) * 8 + 4 // 63 .. "megalovania"
 d = 1 + 2 + 3
 
 e = 4 ^ 5 ^ 6
+
+f = -34
+
+g = not -4 < ~73 and #a <= ~-#horse

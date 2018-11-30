@@ -609,10 +609,27 @@ public:
     std::unique_ptr<NExpr> right;
 
     virtual void dump(std::string indent) const override {
-        std::cout << indent << "(" << opname << "\n";
+        std::cout << indent << "(NBinop '" << opname << "'\n";
         indent += "  ";
         left->dump(indent);
         right->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
+class NUnaryop : public NExpr {
+public:
+    NUnaryop() = default;
+    NUnaryop(std::string o, std::unique_ptr<NExpr> e) :
+        opname(std::move(o)),
+        expr(std::move(e)) {}
+    std::string opname;
+    std::unique_ptr<NExpr> expr;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NUnaryop '" << opname << "'\n";
+        indent += "  ";
+        expr->dump(indent);
         std::cout << indent << ")\n";
     }
 };

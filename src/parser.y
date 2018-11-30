@@ -76,7 +76,7 @@
 %type <node> function localfunc retstat localvar
 %type <block> block statseq
 %type <expr> expr var functioncall prefixexpr funcvar functiondef
-%type <expr> tableconstructor binopcall
+%type <expr> tableconstructor binopcall unaryopcall
 %type <argseq> argseq args
 %type <elseifseq> elseifseq
 %type <elseif> elseif
@@ -139,6 +139,7 @@ expr: TNIL { $$ = new NNil(); }
     | prefixexpr %prec ')' { $$ = $1; }
     | tableconstructor { $$ = $1; }
     | binopcall { $$ = $1; }
+    | unaryopcall { $$ = $1; }
     ;
 
 namelist: TIDENTIFIER {
@@ -192,6 +193,12 @@ binopcall: expr[l] TOR expr[r] { $$ = new NBinop("or", ptr($l), ptr($r)); }
          | expr[l] '%' expr[r] { $$ = new NBinop("%", ptr($l), ptr($r)); }
          | expr[l] '^' expr[r] { $$ = new NBinop("^", ptr($l), ptr($r)); }
          ;
+
+unaryopcall: TNOT expr { $$ = new NUnaryop("not", ptr($expr)); }
+           | '#' expr { $$ = new NUnaryop("#", ptr($expr)); }
+           | '-' expr %prec NEG { $$ = new NUnaryop("-", ptr($expr)); }
+           | '~' expr %prec BNOT { $$ = new NUnaryop("~", ptr($expr)); }
+           ;
 
 localvar: TLOCAL namelist {
             $$ = new NLocalVar(
