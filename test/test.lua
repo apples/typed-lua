@@ -90,3 +90,13 @@ local f = function() return 42 end
 asd = {}
 
 fefe = { 54, df = "asdf"; [fun()] = 42, }
+
+a = 4 + 7
+
+b = 8 and "horse"
+
+c = (4 ~= 74 and "ddd" or 42) * 8 + 4 // 63 .. "megalovania"
+
+d = 1 + 2 + 3
+
+e = 4 ^ 5 ^ 6

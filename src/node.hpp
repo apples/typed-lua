@@ -597,6 +597,26 @@ public:
     }
 };
 
+class NBinop : public NExpr {
+public:
+    NBinop() = default;
+    NBinop(std::string o, std::unique_ptr<NExpr> l, std::unique_ptr<NExpr> r) :
+        opname(std::move(o)),
+        left(std::move(l)),
+        right(std::move(r)) {}
+    std::string opname;
+    std::unique_ptr<NExpr> left;
+    std::unique_ptr<NExpr> right;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(" << opname << "\n";
+        indent += "  ";
+        left->dump(indent);
+        right->dump(indent);
+        std::cout << indent << ")\n";
+    }
+};
+
 } // namespace typedlua::ast
 
 #endif // TYPEDLUA_NODE_HPP

@@ -23,14 +23,22 @@ extern "C" int yywrap() { }
 ","                                 |
 ":"                                 |
 ";"                                 |
+"|"                                 |
+"&"                                 |
+"~"                                 |
+"%"                                 |
+"#"                                 |
+"^"                                 |
 "+"                                 |
 "-"                                 |
 "*"                                 |
 "/"                                 return yytext[0];
 "=="                                return TCEQ;
-"!="                                return TCNE;
+"~="                                return TCNE;
 "<="                                return TCLE;
 ">="                                return TCGE;
+"<<"                                return TSHL;
+">>"                                return TSHR;
 "//"                                return TSLASH2;
 ".."                                return TDOT2;
 "..."                               return TDOT3;

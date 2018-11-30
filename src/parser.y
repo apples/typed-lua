@@ -14,6 +14,10 @@
     static void yyerror(Node* root, const char *s) {
         std::cerr << "ERROR: " << s << "\n";
     }
+
+    static std::unique_ptr<NExpr> ptr(NExpr* expr) {
+        return std::unique_ptr<NExpr>(expr);
+    }
 }
 
 %union {
@@ -44,7 +48,7 @@
 %destructor { delete $$; } <field>
 %destructor { delete $$; } <fields>
 
-%token TCEQ TCNE TCLE TCGE
+%token TCEQ TCNE TCLE TCGE TSHL TSHR
 %token TSLASH2 TDOT2 TDOT3 TCOLON2
 %token TAND TBREAK TDO TELSE TELSEIF TEND
 %token TFALSE TFOR TFUNCTION TGOTO TIF TIN
@@ -53,15 +57,26 @@
 
 %token <string> TIDENTIFIER TNUMBER TSTRING
 
+%left TOR
+%left TAND
+%left '<' '>' TCLE TCGE TCNE TCEQ
+%left '|'
+%left '~'
+%left '&'
+%left TSHL TSHR
+%right TDOT2
 %left '+' '-'
-%left '*' '/' TSLASH2
+%left '*' '/' TSLASH2 '%'
+%left TNOT '#' NEG BNOT
+%right '^'
 %left ')'
 %left '('
 
 %type <node> stat assign label goto while repeat if fornumeric forgeneric
 %type <node> function localfunc retstat localvar
 %type <block> block statseq
-%type <expr> expr var functioncall prefixexpr funcvar functiondef tableconstructor
+%type <expr> expr var functioncall prefixexpr funcvar functiondef
+%type <expr> tableconstructor binopcall
 %type <argseq> argseq args
 %type <elseifseq> elseifseq
 %type <elseif> elseif
@@ -123,6 +138,7 @@ expr: TNIL { $$ = new NNil(); }
     | functiondef { $$ = $1; }
     | prefixexpr %prec ')' { $$ = $1; }
     | tableconstructor { $$ = $1; }
+    | binopcall { $$ = $1; }
     ;
 
 namelist: TIDENTIFIER {
@@ -153,6 +169,29 @@ stat: ';' { $$ = new NEmpty(); }
     | localfunc { $$ = $1; }
     | localvar { $$ = $1; }
     ;
+
+binopcall: expr[l] TOR expr[r] { $$ = new NBinop("or", ptr($l), ptr($r)); }
+         | expr[l] TAND expr[r] { $$ = new NBinop("and", ptr($l), ptr($r)); }
+         | expr[l] '<' expr[r] { $$ = new NBinop("<", ptr($l), ptr($r)); }
+         | expr[l] '>' expr[r] { $$ = new NBinop(">", ptr($l), ptr($r)); }
+         | expr[l] TCLE expr[r] { $$ = new NBinop("<=", ptr($l), ptr($r)); }
+         | expr[l] TCGE expr[r] { $$ = new NBinop(">=", ptr($l), ptr($r)); }
+         | expr[l] TCNE expr[r] { $$ = new NBinop("~=", ptr($l), ptr($r)); }
+         | expr[l] TCEQ expr[r] { $$ = new NBinop("==", ptr($l), ptr($r)); }
+         | expr[l] '|' expr[r] { $$ = new NBinop("|", ptr($l), ptr($r)); }
+         | expr[l] '~' expr[r] { $$ = new NBinop("~", ptr($l), ptr($r)); }
+         | expr[l] '&' expr[r] { $$ = new NBinop("&", ptr($l), ptr($r)); }
+         | expr[l] TSHL expr[r] { $$ = new NBinop("<<", ptr($l), ptr($r)); }
+         | expr[l] TSHR expr[r] { $$ = new NBinop(">>", ptr($l), ptr($r)); }
+         | expr[l] TDOT2 expr[r] { $$ = new NBinop("..", ptr($l), ptr($r)); }
+         | expr[l] '+' expr[r] { $$ = new NBinop("+", ptr($l), ptr($r)); }
+         | expr[l] '-' expr[r] { $$ = new NBinop("-", ptr($l), ptr($r)); }
+         | expr[l] '*' expr[r] { $$ = new NBinop("*", ptr($l), ptr($r)); }
+         | expr[l] '/' expr[r] { $$ = new NBinop("/", ptr($l), ptr($r)); }
+         | expr[l] TSLASH2 expr[r] { $$ = new NBinop("//", ptr($l), ptr($r)); }
+         | expr[l] '%' expr[r] { $$ = new NBinop("%", ptr($l), ptr($r)); }
+         | expr[l] '^' expr[r] { $$ = new NBinop("^", ptr($l), ptr($r)); }
+         ;
 
 localvar: TLOCAL namelist {
             $$ = new NLocalVar(
