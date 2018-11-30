@@ -114,6 +114,17 @@ prefixexpr: var { $$ = $1; }
           | '(' expr ')' { $$ = $2; }
           ;
 
+expr: TNIL { $$ = new NNil(); }
+    | TFALSE { $$ = new NBooleanLiteral(false); }
+    | TTRUE { $$ = new NBooleanLiteral(true); }
+    | TNUMBER { $$ = new NNumberLiteral(std::move(*$1)); delete $1; }
+    | TSTRING { $$ = new NStringLiteral(std::move(*$1)); delete $1; }
+    | TDOT3 { $$ = new NDots(); }
+    | functiondef { $$ = $1; }
+    | prefixexpr %prec ')' { $$ = $1; }
+    | tableconstructor { $$ = $1; }
+    ;
+
 namelist: TIDENTIFIER {
             $$ = new std::vector<std::string>();
             $$->push_back(std::move(*$1));
@@ -319,17 +330,6 @@ functioncall: prefixexpr args {
                     std::unique_ptr<NArgSeq>($2));
             }
             ;
-
-expr: TNIL { $$ = new NNil(); }
-    | TFALSE { $$ = new NBooleanLiteral(false); }
-    | TTRUE { $$ = new NBooleanLiteral(true); }
-    | TNUMBER { $$ = new NNumberLiteral(std::move(*$1)); delete $1; }
-    | TSTRING { $$ = new NStringLiteral(std::move(*$1)); delete $1; }
-    | TDOT3 { $$ = new NDots(); }
-    | functiondef { $$ = $1; }
-    | prefixexpr %prec ')' { $$ = $1; }
-    | tableconstructor { $$ = $1; }
-    ;
 
 tableconstructor: '{' '}' { $$ = new NTableConstructor(); }
                 | '{' fieldlist '}' {
