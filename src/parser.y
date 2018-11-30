@@ -33,6 +33,7 @@
     std::vector<std::unique_ptr<NExpr>>* exprs;
     NField* field;
     std::vector<std::unique_ptr<NField>>* fields;
+    NFuncParams* params;
 }
 
 %destructor { delete $$; } <string>
@@ -47,6 +48,7 @@
 %destructor { delete $$; } <exprs>
 %destructor { delete $$; } <field>
 %destructor { delete $$; } <fields>
+%destructor { delete $$; } <params>
 
 %token TCEQ TCNE TCLE TCGE TSHL TSHR
 %token TSLASH2 TDOT2 TDOT3 TCOLON2
@@ -81,10 +83,11 @@
 %type <elseifseq> elseifseq
 %type <elseif> elseif
 %type <else_> else
-%type <strings> namelist funcparams
+%type <strings> namelist
 %type <exprs> explist varlist
 %type <field> field
 %type <fields> fieldlist
+%type <params> funcparams
 
 %start chunk
 
@@ -104,6 +107,7 @@ block: statseq { $$ = $1; }
          $$ = new NBlock();
          $$->children.push_back(std::unique_ptr<Node>($retstat));
      }
+     | %empty { $$ = new NBlock(); }
      ;
 
 statseq: stat {
@@ -218,28 +222,25 @@ localvar: TLOCAL namelist {
 localfunc: TLOCAL TFUNCTION TIDENTIFIER[name] funcparams block TEND {
              $$ = new NLocalFunction(
                  std::move(*$name),
-                 std::move(*$funcparams),
+                 std::unique_ptr<NFuncParams>($funcparams),
                  std::unique_ptr<NBlock>($block));
              delete $name;
-             delete $funcparams;
          }
          ;
 
 function: TFUNCTION funcvar funcparams block TEND {
             $$ = new NFunction(
                 std::unique_ptr<NExpr>($funcvar),
-                std::move(*$funcparams),
+                std::unique_ptr<NFuncParams>($funcparams),
                 std::unique_ptr<NBlock>($block));
-            delete $funcparams;
         }
         | TFUNCTION funcvar ':' TIDENTIFIER[name] funcparams block TEND {
             $$ = new NSelfFunction(
                 std::move(*$name),
                 std::unique_ptr<NExpr>($funcvar),
-                std::move(*$funcparams),
+                std::unique_ptr<NFuncParams>($funcparams),
                 std::unique_ptr<NBlock>($block));
             delete $name;
-            delete $funcparams;
         }
         ;
 
@@ -252,8 +253,18 @@ funcvar: TIDENTIFIER { $$ = new NIdent(std::move(*$1)); delete $1; }
        }
        ;
 
-funcparams: '(' ')' { $$ = new std::vector<std::string>(); }
-          | '(' namelist ')' { $$ = $namelist; }
+funcparams: '(' ')' { $$ = new NFuncParams(); }
+          | '(' TDOT3 ')' {
+              $$ = new NFuncParams({}, true);
+          }
+          | '(' namelist ')' {
+              $$ = new NFuncParams(std::move(*$namelist), false);
+              delete $namelist;
+          }
+          | '(' namelist ',' TDOT3 ')' {
+              $$ = new NFuncParams(std::move(*$namelist), true);
+              delete $namelist;
+          }
           ;
 
 forgeneric: TFOR namelist TIN explist TDO block TEND {
@@ -415,9 +426,8 @@ field: expr { $$ = new NFieldExpr(std::unique_ptr<NExpr>($expr)); }
 
 functiondef: TFUNCTION funcparams block TEND {
                $$ = new NFunctionDef(
-                   std::move(*$funcparams),
+                   std::unique_ptr<NFuncParams>($funcparams),
                    std::unique_ptr<NBlock>($block));
-               delete $funcparams;
            }
            ;
 

@@ -104,3 +104,10 @@ e = 4 ^ 5 ^ 6
 f = -34
 
 g = not -4 < ~73 and #a <= ~-#horse
+
+function sda.ddd(...) end
+function adsf:hor(...) end
+local function daf(...) end
+function sda.ddd(x, y, ...) end
+function adsf:hor(x, y, ...) end
+local function daf(x, y, ...) end

@@ -349,27 +349,44 @@ public:
     }
 };
 
+class NFuncParams : public Node {
+public:
+    NFuncParams() = default;
+    NFuncParams(std::vector<std::string> n, bool v) :
+        names(std::move(n)),
+        is_variadic(v) {}
+    std::vector<std::string> names;
+    bool is_variadic = false;
+
+    virtual void dump(std::string indent) const override {
+        std::cout << indent << "(NFuncParams\n";
+        indent += "  ";
+        for (const auto& name : names) {
+            std::cout << indent << name << "\n";
+        }
+        if (is_variadic) {
+            std::cout << indent << "...\n";
+        }
+        std::cout << indent << ")\n";
+    }
+};
+
 class NFunction : public Node {
 public:
     NFunction() = default;
-    NFunction(std::unique_ptr<NExpr> e, std::vector<std::string> p, std::unique_ptr<NBlock> b) :
+    NFunction(std::unique_ptr<NExpr> e, std::unique_ptr<NFuncParams> p, std::unique_ptr<NBlock> b) :
         expr(std::move(e)),
         params(std::move(p)),
         block(std::move(b)) {}
     std::unique_ptr<NExpr> expr;
-    std::vector<std::string> params;
+    std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NBlock> block;
 
     virtual void dump(std::string indent) const override {
         std::cout << indent << "(NFunction\n";
         indent += "  ";
         expr->dump(indent);
-        std::cout << indent << "([params]\n";
-        const auto indent2 = indent + "  ";
-        for (const auto& param : params) {
-            std::cout << indent2 << param << "\n";
-        }
-        std::cout << indent2 << ")\n";
+        params->dump(indent);
         block->dump(indent);
         std::cout << indent << ")\n";
     }
@@ -378,14 +395,14 @@ public:
 class NSelfFunction : public Node {
 public:
     NSelfFunction() = default;
-    NSelfFunction(std::string m, std::unique_ptr<NExpr> e, std::vector<std::string> p, std::unique_ptr<NBlock> b) :
+    NSelfFunction(std::string m, std::unique_ptr<NExpr> e, std::unique_ptr<NFuncParams> p, std::unique_ptr<NBlock> b) :
         name(std::move(m)),
         expr(std::move(e)),
         params(std::move(p)),
         block(std::move(b)) {}
     std::string name;
     std::unique_ptr<NExpr> expr;
-    std::vector<std::string> params;
+    std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NBlock> block;
 
     virtual void dump(std::string indent) const override {
@@ -393,12 +410,7 @@ public:
         indent += "  ";
         std::cout << indent << name << "\n";
         expr->dump(indent);
-        std::cout << indent << "([params]\n";
-        const auto indent2 = indent + "  ";
-        for (const auto& param : params) {
-            std::cout << indent2 << param << "\n";
-        }
-        std::cout << indent2 << ")\n";
+        params->dump(indent);
         block->dump(indent);
         std::cout << indent << ")\n";
     }
@@ -407,24 +419,19 @@ public:
 class NLocalFunction : public Node {
 public:
     NLocalFunction() = default;
-    NLocalFunction(std::string n, std::vector<std::string> p, std::unique_ptr<NBlock> b) :
+    NLocalFunction(std::string n, std::unique_ptr<NFuncParams> p, std::unique_ptr<NBlock> b) :
         name(std::move(n)),
         params(std::move(p)),
         block(std::move(b)) {}
     std::string name;
-    std::vector<std::string> params;
+    std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NBlock> block;
 
     virtual void dump(std::string indent) const override {
         std::cout << indent << "(NLocalFunction\n";
         indent += "  ";
         std::cout << indent << name << "\n";
-        std::cout << indent << "([params]\n";
-        const auto indent2 = indent + "  ";
-        for (const auto& param : params) {
-            std::cout << indent2 << param << "\n";
-        }
-        std::cout << indent2 << ")\n";
+        params->dump(indent);
         block->dump(indent);
         std::cout << indent << ")\n";
     }
@@ -508,21 +515,16 @@ public:
 class NFunctionDef : public NExpr {
 public:
     NFunctionDef() = default;
-    NFunctionDef(std::vector<std::string> p, std::unique_ptr<NBlock> b) :
+    NFunctionDef(std::unique_ptr<NFuncParams> p, std::unique_ptr<NBlock> b) :
         params(std::move(p)),
         block(std::move(b)) {}
-    std::vector<std::string> params;
+    std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NBlock> block;
 
     virtual void dump(std::string indent) const override {
         std::cout << indent << "(NFunctionDef\n";
         indent += "  ";
-        std::cout << indent << "([params]\n";
-        const auto indent2 = indent + "  ";
-        for (const auto& param : params) {
-            std::cout << indent2 << param << "\n";
-        }
-        std::cout << indent2 << ")\n";
+        params->dump(indent);
         block->dump(indent);
         std::cout << indent << ")\n";
     }
