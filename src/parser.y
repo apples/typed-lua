@@ -1,6 +1,6 @@
 /// Parser grammar
 
-%define api.prefix {typedlua_}
+%define api.prefix {typedlua}
 %define parse.error verbose
 
 // Defines a reentrant parser and lexer.

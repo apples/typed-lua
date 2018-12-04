@@ -11,8 +11,8 @@ namespace typedlua::ast {
 class Node {
 public:
     virtual ~Node() = default;
-    virtual void dump(std::string prefix) const {
-        std::cout << prefix << "(Node)\n";
+    virtual void dump(std::ostream& out, std::string prefix) const {
+        out << prefix << "(Node)\n";
     }
 };
 
@@ -24,13 +24,13 @@ class NBlock : public Node {
 public:
     std::vector<std::unique_ptr<Node>> children;
 
-    virtual void dump(std::string prefix) const override {
-        std::cout << prefix << "(NBlock" << "\n";
+    virtual void dump(std::ostream& out, std::string prefix) const override {
+        out << prefix << "(NBlock" << "\n";
         prefix += "  ";
         for (const auto& child : children) {
-            child->dump(prefix);
+            child->dump(out, prefix);
         }
-        std::cout << prefix << ")" << "\n";
+        out << prefix << ")" << "\n";
     }
 };
 
@@ -40,8 +40,8 @@ public:
     NIdent(std::string v) : name(std::move(v)) {}
     std::string name;
 
-    virtual void dump(std::string prefix) const override {
-        std::cout << prefix << "(NIdent " << name << ")\n";
+    virtual void dump(std::ostream& out, std::string prefix) const override {
+        out << prefix << "(NIdent " << name << ")\n";
     }
 };
 
@@ -54,12 +54,12 @@ public:
     std::unique_ptr<NExpr> prefix;
     std::unique_ptr<NExpr> subscript;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NSubscript\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NSubscript\n";
         indent += "  ";
-        prefix->dump(indent);
-        subscript->dump(indent);
-        std::cout << indent << ")\n";
+        prefix->dump(out, indent);
+        subscript->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -72,12 +72,12 @@ public:
     std::unique_ptr<NExpr> prefix;
     std::string name;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NTableAccess\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NTableAccess\n";
         indent += "  ";
-        prefix->dump(indent);
-        std::cout << indent << name << "\n";
-        std::cout << indent << ")\n";
+        prefix->dump(out, indent);
+        out << indent << name << "\n";
+        out << indent << ")\n";
     }
 };
 
@@ -86,13 +86,13 @@ public:
     NArgSeq() = default;
     std::vector<std::unique_ptr<NExpr>> args;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NArgSeq\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NArgSeq\n";
         indent += "  ";
         for (const auto& arg : args) {
-            arg->dump(indent);
+            arg->dump(out, indent);
         }
-        std::cout << indent << ")\n";
+        out << indent << ")\n";
     }
 };
 
@@ -105,14 +105,14 @@ public:
     std::unique_ptr<NExpr> prefix;
     std::unique_ptr<NArgSeq> args;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NFunctionCall\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NFunctionCall\n";
         indent += "  ";
-        prefix->dump(indent);
+        prefix->dump(out, indent);
         if (args) {
-            args->dump(indent);
+            args->dump(out, indent);
         }
-        std::cout << indent << ")\n";
+        out << indent << ")\n";
     }
 };
 
@@ -122,8 +122,8 @@ public:
     NNumberLiteral(std::string v) : value(std::move(v)) {}
     std::string value;
 
-    virtual void dump(std::string prefix) const override {
-        std::cout << prefix << "(NNumberLiteral " << value << ")\n";
+    virtual void dump(std::ostream& out, std::string prefix) const override {
+        out << prefix << "(NNumberLiteral " << value << ")\n";
     }
 };
 
@@ -136,21 +136,21 @@ public:
     std::vector<std::unique_ptr<NExpr>> vars;
     std::vector<std::unique_ptr<NExpr>> exprs;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NAssignment\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NAssignment\n";
         indent += "  ";
         const auto indent2 = indent + "  ";
-        std::cout << indent << "([vars]\n";
+        out << indent << "([vars]\n";
         for (const auto& var : vars) {
-            var->dump(indent2);
+            var->dump(out, indent2);
         }
-        std::cout << indent2 << ")\n";
-        std::cout << indent << "([exprs]\n";
+        out << indent2 << ")\n";
+        out << indent << "([exprs]\n";
         for (const auto& expr : exprs) {
-            expr->dump(indent2);
+            expr->dump(out, indent2);
         }
-        std::cout << indent2 << ")\n";
-        std::cout << indent << ")\n";
+        out << indent2 << ")\n";
+        out << indent << ")\n";
     }
 };
 
@@ -158,8 +158,8 @@ class NEmpty : public Node {
 public:
     NEmpty() = default;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NEmpty)\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NEmpty)\n";
     }
 };
 
@@ -169,8 +169,8 @@ public:
     NLabel(std::string n) : name(std::move(n)) {}
     std::string name;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NLabel " << name << ")\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NLabel " << name << ")\n";
     }
 };
 
@@ -178,8 +178,8 @@ class NBreak : public Node {
 public:
     NBreak() = default;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NBreak)\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NBreak)\n";
     }
 };
 
@@ -189,8 +189,8 @@ public:
     NGoto(std::string n) : name(std::move(n)) {}
     std::string name;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NGoto " << name << ")\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NGoto " << name << ")\n";
     }
 };
 
@@ -203,12 +203,12 @@ public:
     std::unique_ptr<NExpr> condition;
     std::unique_ptr<NBlock> block;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NWhile\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NWhile\n";
         indent += "  ";
-        condition->dump(indent);
-        block->dump(indent);
-        std::cout << indent << ")\n";
+        condition->dump(out, indent);
+        block->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -221,12 +221,12 @@ public:
     std::unique_ptr<NBlock> block;
     std::unique_ptr<NExpr> until;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NRepeat\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NRepeat\n";
         indent += "  ";
-        block->dump(indent);
-        until->dump(indent);
-        std::cout << indent << ")\n";
+        block->dump(out, indent);
+        until->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -239,12 +239,12 @@ public:
     std::unique_ptr<NExpr> condition;
     std::unique_ptr<NBlock> block;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NElseIf\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NElseIf\n";
         indent += "  ";
-        condition->dump(indent);
-        block->dump(indent);
-        std::cout << indent << ")\n";
+        condition->dump(out, indent);
+        block->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -254,11 +254,11 @@ public:
     NElse(std::unique_ptr<NBlock> b) : block(std::move(b)) {}
     std::unique_ptr<NBlock> block;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NElse\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NElse\n";
         indent += "  ";
-        block->dump(indent);
-        std::cout << indent << ")\n";
+        block->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -275,18 +275,18 @@ public:
     std::vector<std::unique_ptr<NElseIf>> elseifs;
     std::unique_ptr<NElse> else_;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NIf\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NIf\n";
         indent += "  ";
-        condition->dump(indent);
-        block->dump(indent);
+        condition->dump(out, indent);
+        block->dump(out, indent);
         for (const auto& elseif : elseifs) {
-            elseif->dump(indent);
+            elseif->dump(out, indent);
         }
         if (else_) {
-            else_->dump(indent);
+            else_->dump(out, indent);
         }
-        std::cout << indent << ")\n";
+        out << indent << ")\n";
     }
 };
 
@@ -305,17 +305,17 @@ public:
     std::unique_ptr<NExpr> step;
     std::unique_ptr<NBlock> block;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NForNumeric\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NForNumeric\n";
         indent += "  ";
-        std::cout << indent << name << "\n";
-        begin->dump(indent);
-        end->dump(indent);
+        out << indent << name << "\n";
+        begin->dump(out, indent);
+        end->dump(out, indent);
         if (step) {
-            step->dump(indent);
+            step->dump(out, indent);
         }
-        block->dump(indent);
-        std::cout << indent << ")\n";
+        block->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -330,22 +330,22 @@ public:
     std::vector<std::unique_ptr<NExpr>> exprs;
     std::unique_ptr<NBlock> block;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NForGeneric\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NForGeneric\n";
         indent += "  ";
         auto indent2 = indent + "  ";
-        std::cout << indent << "([names]\n";
+        out << indent << "([names]\n";
         for (const auto& name : names) {
-            std::cout << indent2 << name << "\n";
+            out << indent2 << name << "\n";
         }
-        std::cout << indent2 << ")" << "\n";
-        std::cout << indent << "([exprs]\n";
+        out << indent2 << ")" << "\n";
+        out << indent << "([exprs]\n";
         for (const auto& expr : exprs) {
-            expr->dump(indent2);
+            expr->dump(out, indent2);
         }
-        std::cout << indent2 << ")\n";
-        block->dump(indent);
-        std::cout << indent << ")\n";
+        out << indent2 << ")\n";
+        block->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -358,16 +358,16 @@ public:
     std::vector<std::string> names;
     bool is_variadic = false;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NFuncParams\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NFuncParams\n";
         indent += "  ";
         for (const auto& name : names) {
-            std::cout << indent << name << "\n";
+            out << indent << name << "\n";
         }
         if (is_variadic) {
-            std::cout << indent << "...\n";
+            out << indent << "...\n";
         }
-        std::cout << indent << ")\n";
+        out << indent << ")\n";
     }
 };
 
@@ -382,13 +382,13 @@ public:
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NBlock> block;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NFunction\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NFunction\n";
         indent += "  ";
-        expr->dump(indent);
-        params->dump(indent);
-        block->dump(indent);
-        std::cout << indent << ")\n";
+        expr->dump(out, indent);
+        params->dump(out, indent);
+        block->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -405,14 +405,14 @@ public:
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NBlock> block;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NSelfFunction\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NSelfFunction\n";
         indent += "  ";
-        std::cout << indent << name << "\n";
-        expr->dump(indent);
-        params->dump(indent);
-        block->dump(indent);
-        std::cout << indent << ")\n";
+        out << indent << name << "\n";
+        expr->dump(out, indent);
+        params->dump(out, indent);
+        block->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -427,13 +427,13 @@ public:
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NBlock> block;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NLocalFunction\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NLocalFunction\n";
         indent += "  ";
-        std::cout << indent << name << "\n";
-        params->dump(indent);
-        block->dump(indent);
-        std::cout << indent << ")\n";
+        out << indent << name << "\n";
+        params->dump(out, indent);
+        block->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -443,13 +443,13 @@ public:
     NReturn(std::vector<std::unique_ptr<NExpr>> e) : exprs(std::move(e)) {}
     std::vector<std::unique_ptr<NExpr>> exprs;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NReturn\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NReturn\n";
         indent += "  ";
         for (const auto& expr : exprs) {
-            expr->dump(indent);
+            expr->dump(out, indent);
         }
-        std::cout << indent << ")\n";
+        out << indent << ")\n";
     }
 };
 
@@ -462,23 +462,23 @@ public:
     std::vector<std::string> names;
     std::vector<std::unique_ptr<NExpr>> exprs;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NLocalVar\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NLocalVar\n";
         indent += "  ";
         for (const auto& name : names) {
-            std::cout << indent << name << "\n";
+            out << indent << name << "\n";
         }
         for (const auto& expr : exprs) {
-            expr->dump(indent);
+            expr->dump(out, indent);
         }
-        std::cout << indent << ")\n";
+        out << indent << ")\n";
     }
 };
 
 class NNil : public NExpr {
 public:
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NNil)\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NNil)\n";
     }
 };
 
@@ -488,8 +488,8 @@ public:
     NBooleanLiteral(bool v) : value(v) {}
     bool value;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NBooleanLiteral "
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NBooleanLiteral "
             << (value ? "true" : "false") << ")\n";
     }
 };
@@ -500,15 +500,15 @@ public:
     NStringLiteral(std::string v) : value(std::move(v)) {}
     std::string value;
 
-    virtual void dump(std::string prefix) const override {
-        std::cout << prefix << "(NStringLiteral " << value << ")\n";
+    virtual void dump(std::ostream& out, std::string prefix) const override {
+        out << prefix << "(NStringLiteral " << value << ")\n";
     }
 };
 
 class NDots : public NExpr {
 public:
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NDots)\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NDots)\n";
     }
 };
 
@@ -521,12 +521,12 @@ public:
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NBlock> block;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NFunctionDef\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NFunctionDef\n";
         indent += "  ";
-        params->dump(indent);
-        block->dump(indent);
-        std::cout << indent << ")\n";
+        params->dump(out, indent);
+        block->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -539,11 +539,11 @@ public:
     NFieldExpr(std::unique_ptr<NExpr> e) : expr(std::move(e)) {}
     std::unique_ptr<NExpr> expr;
     
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NFieldExpr\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NFieldExpr\n";
         indent += "  ";
-        expr->dump(indent);
-        std::cout << indent << ")\n";
+        expr->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -556,12 +556,12 @@ public:
     std::string key;
     std::unique_ptr<NExpr> value;
     
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NFieldNamed\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NFieldNamed\n";
         indent += "  ";
-        std::cout << indent << key << "\n";
-        value->dump(indent);
-        std::cout << indent << ")\n";
+        out << indent << key << "\n";
+        value->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -574,12 +574,12 @@ public:
     std::unique_ptr<NExpr> key;
     std::unique_ptr<NExpr> value;
     
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NFieldKey\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NFieldKey\n";
         indent += "  ";
-        key->dump(indent);
-        value->dump(indent);
-        std::cout << indent << ")\n";
+        key->dump(out, indent);
+        value->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -589,13 +589,13 @@ public:
     NTableConstructor(std::vector<std::unique_ptr<NField>> f) : fields(std::move(f)) {}
     std::vector<std::unique_ptr<NField>> fields;
     
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NTableConstructor\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NTableConstructor\n";
         indent += "  ";
         for (const auto& field : fields) {
-            field->dump(indent);
+            field->dump(out, indent);
         }
-        std::cout << indent << ")\n";
+        out << indent << ")\n";
     }
 };
 
@@ -610,12 +610,12 @@ public:
     std::unique_ptr<NExpr> left;
     std::unique_ptr<NExpr> right;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NBinop '" << opname << "'\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NBinop '" << opname << "'\n";
         indent += "  ";
-        left->dump(indent);
-        right->dump(indent);
-        std::cout << indent << ")\n";
+        left->dump(out, indent);
+        right->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 
@@ -628,11 +628,11 @@ public:
     std::string opname;
     std::unique_ptr<NExpr> expr;
 
-    virtual void dump(std::string indent) const override {
-        std::cout << indent << "(NUnaryop '" << opname << "'\n";
+    virtual void dump(std::ostream& out, std::string indent) const override {
+        out << indent << "(NUnaryop '" << opname << "'\n";
         indent += "  ";
-        expr->dump(indent);
-        std::cout << indent << ")\n";
+        expr->dump(out, indent);
+        out << indent << ")\n";
     }
 };
 

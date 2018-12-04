@@ -1,4 +1,4 @@
-%option prefix="typedlua_"
+%option prefix="typedlua"
 %option reentrant bison-bridge bison-locations
 %option noyywrap nounput noinput
 %option yylineno
@@ -7,8 +7,8 @@
 #include <string>
 #include "node.hpp"
 #include "parser.hpp"
-#define YYSTYPE TYPEDLUA_STYPE
-#define YYLTYPE TYPEDLUA_LTYPE
+#define YYSTYPE TYPEDLUASTYPE
+#define YYLTYPE TYPEDLUALTYPE
 }
 
 %{

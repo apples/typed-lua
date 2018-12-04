@@ -1,16 +1,13 @@
 #include <iostream>
-#include "node.hpp"
-#include "parser.hpp"
-#include "lexer.hpp"
+#include <sstream>
+
+#include "typedlua_compiler.hpp"
 
 int main(int argc, char **argv) {
-    yyscan_t scanner;
-    typedlua_lex_init(&scanner);
-    typedlua::ast::Node* root = nullptr;
-    if (typedlua_parse(scanner, root) == 0) {
-        if (root) {
-            root->dump("");
-        }
-    }
-    typedlua_lex_destroy(scanner);
+    auto tlc = typedlua_compiler();
+    
+    std::stringstream ss;
+    ss << std::cin.rdbuf();
+
+    std::cout << tlc.compile(ss.str(), "cin");
 }
