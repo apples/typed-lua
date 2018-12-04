@@ -1,11 +1,15 @@
-%option reentrant bison-bridge
+%option reentrant bison-bridge bison-locations
 %option noyywrap nounput noinput
+%option yylineno
 
 %{
 #include <string>
 #include "node.hpp"
 #include "parser.hpp"
+
 #define SAVE_TOKEN yylval->string = new std::string(yytext, yyleng)
+
+#define YY_USER_ACTION yylloc->first_line = yylloc->last_line = yylineno;
 %}
 
 %%

@@ -7,42 +7,45 @@
 // but due to a circular dependency, this seems impossible.
 %define api.pure full
 %lex-param {yyscan_t scanner}
-%parse-param {void* scanner} {Node*& root}
+%parse-param {void* scanner} {typedlua::ast::Node*& root}
+
+%locations
 
 %code requires {
     #include "node.hpp"
-    #include <iostream>
     #include <string>
+}
+
+%union {
+    std::string* string;
+    typedlua::ast::Node* node;
+    typedlua::ast::NBlock* block;
+    typedlua::ast::NExpr* expr;
+    typedlua::ast::NArgSeq* argseq;
+    std::vector<std::unique_ptr<typedlua::ast::NElseIf>>* elseifseq;
+    typedlua::ast::NElseIf* elseif;
+    typedlua::ast::NElse* else_;
+    std::vector<std::string>* strings;
+    std::vector<std::unique_ptr<typedlua::ast::NExpr>>* exprs;
+    typedlua::ast::NField* field;
+    std::vector<std::unique_ptr<typedlua::ast::NField>>* fields;
+    typedlua::ast::NFuncParams* params;
+}
+
+%code {
+    #include "lexer.hpp"
+    #include <iostream>
 
     using namespace typedlua::ast;
 
-    static void yyerror(void* scanner, Node* root, const char *s) {
+    static void yyerror(YYLTYPE* loc, void* scanner, Node* root, const char *s) {
         std::cerr << "ERROR: " << s << "\n";
+        std::cerr << "  Line: " << loc->first_line << std::endl;
     }
 
     static std::unique_ptr<NExpr> ptr(NExpr* expr) {
         return std::unique_ptr<NExpr>(expr);
     }
-}
-
-%union {
-    std::string* string;
-    Node* node;
-    NBlock* block;
-    NExpr* expr;
-    NArgSeq* argseq;
-    std::vector<std::unique_ptr<NElseIf>>* elseifseq;
-    NElseIf* elseif;
-    NElse* else_;
-    std::vector<std::string>* strings;
-    std::vector<std::unique_ptr<NExpr>>* exprs;
-    NField* field;
-    std::vector<std::unique_ptr<NField>>* fields;
-    NFuncParams* params;
-}
-
-%code {
-    #include "lexer.hpp"
 }
 
 %destructor { delete $$; } <string>
