@@ -1,14 +1,18 @@
+%option prefix="typedlua_"
 %option reentrant bison-bridge bison-locations
 %option noyywrap nounput noinput
 %option yylineno
 
-%{
+%top{
 #include <string>
 #include "node.hpp"
 #include "parser.hpp"
+#define YYSTYPE TYPEDLUA_STYPE
+#define YYLTYPE TYPEDLUA_LTYPE
+}
 
+%{
 #define SAVE_TOKEN yylval->string = new std::string(yytext, yyleng)
-
 #define YY_USER_ACTION yylloc->first_line = yylloc->last_line = yylineno;
 %}
 
