@@ -111,3 +111,9 @@ local function daf(...) end
 function sda.ddd(x, y, ...) end
 function adsf:hor(x, y, ...) end
 local function daf(x, y, ...) end
+
+global sadf
+global asdf, dfhjiejf
+
+global ddi = 43
+global dijf, fiej = 333, "sadf"

@@ -70,6 +70,8 @@
 %token TLOCAL TNIL TNOT TOR TREPEAT TRETURN
 %token TTHEN TTRUE TUNTIL TWHILE
 
+%token TGLOBAL
+
 %token <string> TIDENTIFIER TNUMBER TSTRING
 
 %left TOR
@@ -88,7 +90,7 @@
 %left '('
 
 %type <node> stat assign label goto while repeat if fornumeric forgeneric
-%type <node> function localfunc retstat localvar
+%type <node> function localfunc retstat localvar globalvar
 %type <block> block statseq
 %type <expr> expr var functioncall prefixexpr funcvar functiondef
 %type <expr> tableconstructor binopcall unaryopcall
@@ -184,6 +186,7 @@ stat: ';' { $$ = new NEmpty(); }
     | function { $$ = $1; }
     | localfunc { $$ = $1; }
     | localvar { $$ = $1; }
+    | globalvar { $$ = $1; }
     ;
 
 binopcall: expr[l] TOR expr[r] { $$ = new NBinop("or", ptr($l), ptr($r)); }
@@ -214,6 +217,21 @@ unaryopcall: TNOT expr { $$ = new NUnaryop("not", ptr($expr)); }
            | '-' expr %prec NEG { $$ = new NUnaryop("-", ptr($expr)); }
            | '~' expr %prec BNOT { $$ = new NUnaryop("~", ptr($expr)); }
            ;
+
+globalvar: TGLOBAL namelist {
+          $$ = new NGlobalVar(
+              std::move(*$namelist),
+              {});
+          delete $namelist;
+      }
+      | TGLOBAL namelist '=' explist {
+            $$ = new NGlobalVar(
+                std::move(*$namelist),
+                std::move(*$explist));
+            delete $namelist;
+            delete $explist;
+      }
+      ;
 
 localvar: TLOCAL namelist {
             $$ = new NLocalVar(

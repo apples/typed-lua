@@ -475,6 +475,50 @@ public:
     }
 };
 
+class NGlobalVar : public Node {
+public:
+    NGlobalVar() = default;
+    NGlobalVar(std::vector<std::string> n, std::vector<std::unique_ptr<NExpr>> e) :
+        names(std::move(n)),
+        exprs(std::move(e)) {}
+    std::vector<std::string> names;
+    std::vector<std::unique_ptr<NExpr>> exprs;
+
+    virtual void dump(std::ostream& out) const override {
+        if (exprs.empty()) {
+            out << "--[[global ";
+            bool first = true;
+            for (const auto& name : names) {
+                if (!first) {
+                    out << ",";
+                }
+                out << name;
+                first = false;
+            }
+            out << "]]";
+        } else {
+            out << "--[[global]] ";
+            bool first = true;
+            for (const auto& name : names) {
+                if (!first) {
+                    out << ",";
+                }
+                out << name;
+                first = false;
+            }
+            out << "=";
+            first = true;
+            for (const auto& expr : exprs) {
+                if (!first) {
+                    out << ",";
+                }
+                out << *expr;
+                first = false;
+            }
+        }
+    }
+};
+
 class NNil : public NExpr {
 public:
     virtual void dump(std::ostream& out) const override {
