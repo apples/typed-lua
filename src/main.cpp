@@ -1,13 +1,16 @@
 #include <iostream>
 #include "node.hpp"
-extern int yyparse(typedlua::ast::Node*& root);
-extern int yydebug;
+#include "parser.hpp"
+#include "lexer.hpp"
 
 int main(int argc, char **argv) {
+    yyscan_t scanner;
+    yylex_init(&scanner);
     typedlua::ast::Node* root = nullptr;
-    if (yyparse(root) == 0) {
+    if (yyparse(scanner, root) == 0) {
         if (root) {
             root->dump("");
         }
     }
+    yylex_destroy(scanner);
 }

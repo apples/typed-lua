@@ -1,8 +1,13 @@
+/// Parser grammar
+
 %define parse.error verbose
 
-%code top {
-    extern int yylex();
-}
+// Defines a reentrant parser and lexer.
+// The first parse-param should be a `yyscan_t`,
+// but due to a circular dependency, this seems impossible.
+%define api.pure full
+%lex-param {yyscan_t scanner}
+%parse-param {void* scanner} {Node*& root}
 
 %code requires {
     #include "node.hpp"
@@ -11,7 +16,7 @@
 
     using namespace typedlua::ast;
 
-    static void yyerror(Node* root, const char *s) {
+    static void yyerror(void* scanner, Node* root, const char *s) {
         std::cerr << "ERROR: " << s << "\n";
     }
 
@@ -34,6 +39,10 @@
     NField* field;
     std::vector<std::unique_ptr<NField>>* fields;
     NFuncParams* params;
+}
+
+%code {
+    #include "lexer.hpp"
 }
 
 %destructor { delete $$; } <string>
@@ -90,8 +99,6 @@
 %type <params> funcparams
 
 %start chunk
-
-%parse-param {Node*& root}
 
 %%
 

@@ -1,9 +1,11 @@
+%option reentrant bison-bridge
+%option noyywrap nounput noinput
+
 %{
 #include <string>
 #include "node.hpp"
 #include "parser.hpp"
-#define SAVE_TOKEN yylval.string = new std::string(yytext, yyleng)
-extern "C" int yywrap() { }
+#define SAVE_TOKEN yylval->string = new std::string(yytext, yyleng)
 %}
 
 %%
