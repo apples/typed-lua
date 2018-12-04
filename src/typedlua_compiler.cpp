@@ -16,10 +16,8 @@ auto typedlua_compiler::compile(std::string_view source, std::string_view name) 
 
     std::ostringstream oss;
 
-    if (typedluaparse(scanner, root) == 0) {
-        if (root) {
-            root->dump(oss, "");
-        }
+    if (typedluaparse(scanner, root) == 0 && root) {
+        oss << *root << std::endl;
     }
 
     typedlua_delete_buffer(buffer, scanner);

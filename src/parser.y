@@ -175,7 +175,7 @@ stat: ';' { $$ = new NEmpty(); }
     | label { $$ = $1; }
     | TBREAK { $$ = new NBreak(); }
     | goto { $$ = $1; }
-    | TDO block TEND { $$ = $2; }
+    | TDO block TEND { $$ = $2; $2->scoped = true; }
     | while { $$ = $1; }
     | repeat { $$ = $1; }
     | if { $$ = $1; }
