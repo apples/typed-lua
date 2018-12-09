@@ -58,6 +58,18 @@ public:
         }
     }
 
+    void add_type(const std::string& name, Type type) {
+        types[name] = std::move(type);
+    }
+
+    void enable_lua_types() {
+        add_type("nil", Type(LuaType::NIL));
+        add_type("number", Type(LuaType::NUMBER));
+        add_type("string", Type(LuaType::STRING));
+        add_type("boolean", Type(LuaType::BOOLEAN));
+        add_type("thread", Type(LuaType::THREAD));
+    }
+
 private:
     enum class DotsState {
         INHERIT,

@@ -100,7 +100,7 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << name;
-        if (type) out << "--[[: " << *type << "]]";
+        if (type) out << "--[[:" << *type << "]]";
     }
 
     Type get_type(const Scope& scope) const {
@@ -627,7 +627,7 @@ public:
         params->check(parent_scope, errors);
 
         auto this_scope = Scope(&parent_scope);
-        this_scope.add_name(name, Type(LuaType::FUNCTION));
+        this_scope.add_name(name, Type::make_any());
         params->add_to_scope(this_scope);
 
         block->check(this_scope, errors);

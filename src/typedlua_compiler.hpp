@@ -1,6 +1,7 @@
 #pragma once
 
 #include "compile_error.hpp"
+#include "scope.hpp"
 
 #include <string>
 #include <string_view>
@@ -16,9 +17,12 @@ public:
     };
 
     Compiler();
+    Compiler(Scope& global_scope);
 
     auto compile(std::string_view source, std::string_view name) -> Result;
+
 private:
+    Scope* global_scope;
 };
 
 } // namespace typedlua

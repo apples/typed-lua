@@ -4,7 +4,9 @@
 #include "typedlua_compiler.hpp"
 
 int main(int argc, char **argv) {
-    auto tlc = typedlua::Compiler();
+    auto scope = typedlua::Scope();
+    scope.enable_lua_types();
+    auto tlc = typedlua::Compiler(scope);
     
     std::stringstream ss;
     ss << std::cin.rdbuf();

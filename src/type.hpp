@@ -10,10 +10,7 @@ enum class LuaType {
     NUMBER,
     STRING,
     BOOLEAN,
-    TABLE,
-    FUNCTION,
-    THREAD,
-    USERDATA
+    THREAD
 };
 
 class Type {

@@ -9,6 +9,8 @@ namespace typedlua {
 
 Compiler::Compiler() {}
 
+Compiler::Compiler(Scope& global_scope) : global_scope(&global_scope) {}
+
 auto Compiler::compile(std::string_view source, std::string_view name) -> Result {
     yyscan_t scanner;
     typedlualex_init(&scanner);
@@ -20,8 +22,7 @@ auto Compiler::compile(std::string_view source, std::string_view name) -> Result
     auto rv = Result{};
 
     if (typedluaparse(scanner, root) == 0 && root) {
-        auto scope = Scope();
-        scope.disable_dots();
+        auto scope = Scope(global_scope);
         std::vector<CompileError> errors;
         root->check(scope, errors);
         oss << *root << std::endl;
