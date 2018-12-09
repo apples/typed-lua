@@ -47,6 +47,17 @@ public:
         dots_state = DotsState::NONE;
     }
 
+    const Type* get_type(const std::string& name) const {
+        auto iter = types.find(name);
+        if (iter != types.end()) {
+            return &iter->second;
+        } else if (parent) {
+            return parent->get_type(name);
+        } else {
+            return nullptr;
+        }
+    }
+
 private:
     enum class DotsState {
         INHERIT,
@@ -58,6 +69,7 @@ private:
     std::unordered_map<std::string, Type> names;
     std::optional<Type> dots_type;
     DotsState dots_state = DotsState::INHERIT;
+    std::unordered_map<std::string, Type> types;
 };
 
 } // namespace typedlua

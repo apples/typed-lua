@@ -26,11 +26,12 @@
     std::vector<std::unique_ptr<typedlua::ast::NElseIf>>* elseifseq;
     typedlua::ast::NElseIf* elseif;
     typedlua::ast::NElse* else_;
-    std::vector<std::string>* strings;
     std::vector<std::unique_ptr<typedlua::ast::NExpr>>* exprs;
     typedlua::ast::NField* field;
     std::vector<std::unique_ptr<typedlua::ast::NField>>* fields;
     typedlua::ast::NFuncParams* params;
+    std::vector<typedlua::ast::NNameDecl>* namedecls;
+    typedlua::ast::NType* type;
 }
 
 %code {
@@ -57,11 +58,12 @@
 %destructor { delete $$; } <elseifseq>
 %destructor { delete $$; } <elseif>
 %destructor { delete $$; } <else_>
-%destructor { delete $$; } <strings>
 %destructor { delete $$; } <exprs>
 %destructor { delete $$; } <field>
 %destructor { delete $$; } <fields>
 %destructor { delete $$; } <params>
+%destructor { delete $$; } <namedecls>
+%destructor { delete $$; } <type>
 
 %token TCEQ TCNE TCLE TCGE TSHL TSHR
 %token TSLASH2 TDOT2 TDOT3 TCOLON2
@@ -98,11 +100,12 @@
 %type <elseifseq> elseifseq
 %type <elseif> elseif
 %type <else_> else
-%type <strings> namelist
 %type <exprs> explist varlist
 %type <field> field
 %type <fields> fieldlist
 %type <params> funcparams
+%type <namedecls> namelist
+%type <type> type
 
 %start chunk
 
@@ -159,18 +162,6 @@ expr: TNIL { $$ = new NNil(); }
     | unaryopcall { $$ = $1; }
     ;
 
-namelist: TIDENTIFIER {
-            $$ = new std::vector<std::string>();
-            $$->push_back(std::move(*$1));
-            delete $1;
-        }
-        | namelist ',' TIDENTIFIER {
-            $$ = $1;
-            $$->push_back(std::move(*$3));
-            delete $3;
-        }
-        ;
-
 stat: ';' { $$ = new NEmpty(); }
     | assign { $$ = $1; }
     | functioncall { $$ = $1; }
@@ -187,6 +178,34 @@ stat: ';' { $$ = new NEmpty(); }
     | localfunc { $$ = $1; }
     | localvar { $$ = $1; }
     | globalvar { $$ = $1; }
+    ;
+
+namelist: TIDENTIFIER {
+            $$ = new std::vector<NNameDecl>();
+            $$->emplace_back(std::move(*$1));
+            delete $1;
+        }
+        | TIDENTIFIER ':' type {
+            $$ = new std::vector<NNameDecl>();
+            $$->emplace_back(std::move(*$1), std::unique_ptr<NType>($type));
+            delete $1;
+        }
+        | namelist ',' TIDENTIFIER {
+            $$ = $1;
+            $$->emplace_back(std::move(*$3));
+            delete $3;
+        }
+        | namelist ',' TIDENTIFIER ':' type {
+            $$ = $1;
+            $$->emplace_back(std::move(*$3), std::unique_ptr<NType>($type));
+            delete $3;
+        }
+        ;
+
+type: TIDENTIFIER {
+        $$ = new NTypeName(std::move(*$1));
+        delete $1;
+    }
     ;
 
 binopcall: expr[l] TOR expr[r] { $$ = new NBinop("or", ptr($l), ptr($r)); }

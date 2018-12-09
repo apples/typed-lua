@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <optional>
 
 namespace typedlua::ast {
 
@@ -25,7 +26,7 @@ public:
     }
 };
 
-inline std::ostream& operator<<(std::ostream& out, Node& n) {
+inline std::ostream& operator<<(std::ostream& out, const Node& n) {
     n.dump(out);
     return out;
 }
@@ -52,6 +53,62 @@ public:
             out << *child << "\n";
         }
         if (scoped) out << "end";
+    }
+};
+
+class NType : public Node {
+public:
+    virtual Type get_type(const Scope& scope) const = 0;
+};
+
+class NTypeName : public NType {
+public:
+    NTypeName() = default;
+    NTypeName(std::string name) : name(std::move(name)) {}
+    std::string name;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        if (!parent_scope.get_type(name)) {
+            errors.emplace_back("Type `" + name + "` not in scope");
+        }
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << name;
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        if (auto type = scope.get_type(name)) {
+            return *type;
+        } else {
+            return Type::make_any();
+        }
+    }
+};
+
+class NNameDecl : public Node {
+public:
+    NNameDecl() = default;
+    NNameDecl(std::string name) : name(std::move(name)) {}
+    NNameDecl(std::string name, std::unique_ptr<NType> type) : name(std::move(name)), type(std::move(type)) {}
+    std::string name;
+    std::unique_ptr<NType> type;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        if (type) type->check(parent_scope, errors);
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << name;
+        if (type) out << "--[[: " << *type << "]]";
+    }
+
+    Type get_type(const Scope& scope) const {
+        if (type) {
+            return type->get_type(scope);
+        } else {
+            return Type::make_any();
+        }
     }
 };
 
@@ -397,22 +454,29 @@ public:
 class NForGeneric : public Node {
 public:
     NForGeneric() = default;
-    NForGeneric(std::vector<std::string> n, std::vector<std::unique_ptr<NExpr>> e, std::unique_ptr<NBlock> b) :
+    NForGeneric(std::vector<NNameDecl> n, std::vector<std::unique_ptr<NExpr>> e, std::unique_ptr<NBlock> b) :
         names(std::move(n)),
         exprs(std::move(e)),
         block(std::move(b)) {}
-    std::vector<std::string> names;
+    std::vector<NNameDecl> names;
     std::vector<std::unique_ptr<NExpr>> exprs;
     std::unique_ptr<NBlock> block;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        for (const auto &name : names) {
+            if (parent_scope.get_type_of(name.name)) {
+                errors.emplace_back(CompileError::Severity::WARNING, "For-loop variable shadows name `" + name.name + "`");
+            }
+            name.check(parent_scope, errors);
+        }
+
         for (const auto& expr : exprs) {
             expr->check(parent_scope, errors);
         }
 
         auto this_scope = Scope(&parent_scope);
         for (const auto& name : names) {
-            this_scope.add_name(name, Type::make_any());
+            this_scope.add_name(name.name, name.get_type(parent_scope));
         }
 
         block->check(this_scope, errors);
@@ -446,11 +510,20 @@ public:
 class NFuncParams : public Node {
 public:
     NFuncParams() = default;
-    NFuncParams(std::vector<std::string> n, bool v) :
+    NFuncParams(std::vector<NNameDecl> n, bool v) :
         names(std::move(n)),
         is_variadic(v) {}
-    std::vector<std::string> names;
+    std::vector<NNameDecl> names;
     bool is_variadic = false;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        for (const auto& name : names) {
+            if (parent_scope.get_type_of(name.name)) {
+                errors.emplace_back(CompileError::Severity::WARNING, "Function parameter shadows name `" + name.name + "`");
+            }
+            name.check(parent_scope, errors);
+        }
+    }
 
     virtual void dump(std::ostream& out) const override {
         bool first = true;
@@ -471,7 +544,7 @@ public:
 
     void add_to_scope(Scope& scope) const {
         for (const auto& name : names) {
-            scope.add_name(name, Type::make_any());
+            scope.add_name(name.name, name.get_type(scope));
         }
         if (is_variadic) {
             scope.set_dots_type(Type::make_any());
@@ -495,7 +568,11 @@ public:
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         expr->check(parent_scope, errors);
         params->check(parent_scope, errors);
-        block->check(parent_scope, errors);
+
+        auto this_scope = Scope(&parent_scope);
+        params->add_to_scope(this_scope);
+
+        block->check(this_scope, errors);
     }
 
     virtual void dump(std::ostream& out) const override {
@@ -594,25 +671,24 @@ public:
 class NLocalVar : public Node {
 public:
     NLocalVar() = default;
-    NLocalVar(std::vector<std::string> n, std::vector<std::unique_ptr<NExpr>> e) :
+    NLocalVar(std::vector<NNameDecl> n, std::vector<std::unique_ptr<NExpr>> e) :
         names(std::move(n)),
         exprs(std::move(e)) {}
-    std::vector<std::string> names;
+    std::vector<NNameDecl> names;
     std::vector<std::unique_ptr<NExpr>> exprs;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         for (const auto& name : names) {
-            if (parent_scope.get_type_of(name)) {
-                errors.push_back(
-                    CompileError{CompileError::Severity::WARNING,
-                              "Local variable shadows name `" + name + "`"});
+            if (parent_scope.get_type_of(name.name)) {
+                errors.emplace_back(CompileError::Severity::WARNING, "Local variable shadows name `" + name.name + "`");
             }
+            name.check(parent_scope, errors);
         }
         for (const auto& expr : exprs) {
             expr->check(parent_scope, errors);
         }
         for (const auto& name : names) {
-            parent_scope.add_name(name, Type::make_any());
+            parent_scope.add_name(name.name, name.get_type(parent_scope));
         }
     }
 
@@ -643,23 +719,24 @@ public:
 class NGlobalVar : public Node {
 public:
     NGlobalVar() = default;
-    NGlobalVar(std::vector<std::string> n, std::vector<std::unique_ptr<NExpr>> e) :
+    NGlobalVar(std::vector<NNameDecl> n, std::vector<std::unique_ptr<NExpr>> e) :
         names(std::move(n)),
         exprs(std::move(e)) {}
-    std::vector<std::string> names;
+    std::vector<NNameDecl> names;
     std::vector<std::unique_ptr<NExpr>> exprs;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         for (const auto& name : names) {
-            if (parent_scope.get_type_of(name)) {
-                errors.push_back(CompileError{"Global variable shadows name `" + name + "`"});
+            if (parent_scope.get_type_of(name.name)) {
+                errors.push_back(CompileError{"Global variable shadows name `" + name.name + "`"});
             }
+            name.check(parent_scope, errors);
         }
         for (const auto& expr : exprs) {
             expr->check(parent_scope, errors);
         }
         for (const auto& name : names) {
-            parent_scope.add_name(name, Type::make_any());
+            parent_scope.add_name(name.name, name.get_type(parent_scope));
         }
     }
 
