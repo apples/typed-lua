@@ -1,6 +1,10 @@
 #ifndef TYPEDLUA_NODE_HPP
 #define TYPEDLUA_NODE_HPP
 
+#include "type.hpp"
+#include "scope.hpp"
+#include "compile_error.hpp"
+
 #include <iostream>
 #include <memory>
 #include <string>
@@ -11,6 +15,11 @@ namespace typedlua::ast {
 class Node {
 public:
     virtual ~Node() = default;
+    
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        // do nothing
+    }
+
     virtual void dump(std::ostream& out) const {
         out << "--[[NOT IMPLEMENTED]]";
     }
@@ -30,6 +39,13 @@ public:
     std::vector<std::unique_ptr<Node>> children;
     bool scoped = false;
 
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        auto this_scope = Scope(&parent_scope);
+        for (const auto& child : children) {
+            child->check(this_scope, errors);
+        }
+    }
+
     virtual void dump(std::ostream& out) const override {
         if (scoped) out << "do\n";
         for (const auto& child : children) {
@@ -45,6 +61,14 @@ public:
     NIdent(std::string v) : name(std::move(v)) {}
     std::string name;
 
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        if (!parent_scope.get_type_of(name)) {
+            errors.push_back(CompileError{"Name `" + name + "` is not in scope"});
+            // Prevent further type errors for this name
+            parent_scope.add_name(name, Type::make_any());
+        }
+    }
+
     virtual void dump(std::ostream& out) const override {
         out << name;
     }
@@ -58,6 +82,11 @@ public:
         subscript(std::move(s)) {}
     std::unique_ptr<NExpr> prefix;
     std::unique_ptr<NExpr> subscript;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        prefix->check(parent_scope, errors);
+        subscript->check(parent_scope, errors);
+    }
 
     virtual void dump(std::ostream& out) const override {
         out << *prefix << "[" << *subscript << "]";
@@ -73,6 +102,10 @@ public:
     std::unique_ptr<NExpr> prefix;
     std::string name;
 
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        prefix->check(parent_scope, errors);
+    }
+
     virtual void dump(std::ostream& out) const override {
         out << *prefix << "." << name;
     }
@@ -82,6 +115,12 @@ class NArgSeq : public Node {
 public:
     NArgSeq() = default;
     std::vector<std::unique_ptr<NExpr>> args;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        for (const auto& arg : args) {
+            arg->check(parent_scope, errors);
+        }
+    }
 
     virtual void dump(std::ostream& out) const override {
         bool first = true;
@@ -103,6 +142,11 @@ public:
         args(std::move(a)) {}
     std::unique_ptr<NExpr> prefix;
     std::unique_ptr<NArgSeq> args;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        prefix->check(parent_scope, errors);
+        if (args) args->check(parent_scope, errors);
+    }
 
     virtual void dump(std::ostream& out) const override {
         out << *prefix << "(";
@@ -130,6 +174,16 @@ public:
         exprs(std::move(e)) {}
     std::vector<std::unique_ptr<NExpr>> vars;
     std::vector<std::unique_ptr<NExpr>> exprs;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        for (const auto& var : vars) {
+            var->check(parent_scope, errors);
+        }
+
+        for (const auto& expr : exprs) {
+            expr->check(parent_scope, errors);
+        }
+    }
 
     virtual void dump(std::ostream& out) const override {
         bool first = true;
@@ -203,6 +257,11 @@ public:
     std::unique_ptr<NExpr> condition;
     std::unique_ptr<NBlock> block;
 
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        condition->check(parent_scope, errors);
+        block->check(parent_scope, errors);
+    }
+
     virtual void dump(std::ostream& out) const override {
         out << "while " << *condition << " do\n";
         out << *block;
@@ -218,6 +277,11 @@ public:
         until(std::move(u)) {}
     std::unique_ptr<NBlock> block;
     std::unique_ptr<NExpr> until;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        block->check(parent_scope, errors);
+        until->check(parent_scope, errors);
+    }
 
     virtual void dump(std::ostream& out) const override {
         out << "repeat\n";
@@ -235,6 +299,11 @@ public:
     std::unique_ptr<NExpr> condition;
     std::unique_ptr<NBlock> block;
 
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        condition->check(parent_scope, errors);
+        block->check(parent_scope, errors);
+    }
+
     virtual void dump(std::ostream& out) const override {
         out << "elseif " << *condition << " then\n";
         out << *block;
@@ -246,6 +315,10 @@ public:
     NElse() = default;
     NElse(std::unique_ptr<NBlock> b) : block(std::move(b)) {}
     std::unique_ptr<NBlock> block;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        block->check(parent_scope, errors);
+    }
 
     virtual void dump(std::ostream& out) const override {
         out << "else\n";
@@ -265,6 +338,15 @@ public:
     std::unique_ptr<NBlock> block;
     std::vector<std::unique_ptr<NElseIf>> elseifs;
     std::unique_ptr<NElse> else_;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        condition->check(parent_scope, errors);
+        block->check(parent_scope, errors);
+        for (const auto& elseif : elseifs) {
+            elseif->check(parent_scope, errors);
+        }
+        if (else_) else_->check(parent_scope, errors);
+    }
 
     virtual void dump(std::ostream& out) const override {
         out << "if " << *condition << " then\n";
@@ -292,6 +374,17 @@ public:
     std::unique_ptr<NExpr> step;
     std::unique_ptr<NBlock> block;
 
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        begin->check(parent_scope, errors);
+        end->check(parent_scope, errors);
+        if (step) step->check(parent_scope, errors);
+
+        auto this_scope = Scope(&parent_scope);
+        this_scope.add_name(name, Type(LuaType::NUMBER));
+
+        block->check(this_scope, errors);
+    }
+
     virtual void dump(std::ostream& out) const override {
         out << "for " << name << "=" << *begin << "," << *end;
         if (step) out << "," << *step;
@@ -311,6 +404,19 @@ public:
     std::vector<std::string> names;
     std::vector<std::unique_ptr<NExpr>> exprs;
     std::unique_ptr<NBlock> block;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        for (const auto& expr : exprs) {
+            expr->check(parent_scope, errors);
+        }
+
+        auto this_scope = Scope(&parent_scope);
+        for (const auto& name : names) {
+            this_scope.add_name(name, Type::make_any());
+        }
+
+        block->check(this_scope, errors);
+    }
 
     virtual void dump(std::ostream& out) const override {
         out << "for ";
@@ -362,6 +468,17 @@ public:
             out << "...";
         }
     }
+
+    void add_to_scope(Scope& scope) const {
+        for (const auto& name : names) {
+            scope.add_name(name, Type::make_any());
+        }
+        if (is_variadic) {
+            scope.set_dots_type(Type::make_any());
+        } else {
+            scope.disable_dots();
+        }
+    }
 };
 
 class NFunction : public Node {
@@ -374,6 +491,12 @@ public:
     std::unique_ptr<NExpr> expr;
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NBlock> block;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        expr->check(parent_scope, errors);
+        params->check(parent_scope, errors);
+        block->check(parent_scope, errors);
+    }
 
     virtual void dump(std::ostream& out) const override {
         out << "function " << *expr << "(" << *params << ")\n";
@@ -395,6 +518,16 @@ public:
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NBlock> block;
 
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        expr->check(parent_scope, errors);
+        params->check(parent_scope, errors);
+
+        auto this_scope = Scope(&parent_scope);
+        params->add_to_scope(this_scope);
+
+        block->check(this_scope, errors);
+    }
+
     virtual void dump(std::ostream& out) const override {
         out << "function " << *expr << ":" << name << "(" << *params << ")\n";
         out << *block;
@@ -413,6 +546,16 @@ public:
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NBlock> block;
 
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        params->check(parent_scope, errors);
+
+        auto this_scope = Scope(&parent_scope);
+        this_scope.add_name(name, Type(LuaType::FUNCTION));
+        params->add_to_scope(this_scope);
+
+        block->check(this_scope, errors);
+    }
+
     virtual void dump(std::ostream& out) const override {
         out << "local function " << name << "(" << *params << ")\n";
         out << *block;
@@ -425,6 +568,12 @@ public:
     NReturn() = default;
     NReturn(std::vector<std::unique_ptr<NExpr>> e) : exprs(std::move(e)) {}
     std::vector<std::unique_ptr<NExpr>> exprs;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        for (const auto& expr : exprs) {
+            expr->check(parent_scope, errors);
+        }
+    }
 
     virtual void dump(std::ostream& out) const override {
         out << "return";
@@ -450,6 +599,22 @@ public:
         exprs(std::move(e)) {}
     std::vector<std::string> names;
     std::vector<std::unique_ptr<NExpr>> exprs;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        for (const auto& name : names) {
+            if (parent_scope.get_type_of(name)) {
+                errors.push_back(
+                    CompileError{CompileError::Severity::WARNING,
+                              "Local variable shadows name `" + name + "`"});
+            }
+        }
+        for (const auto& expr : exprs) {
+            expr->check(parent_scope, errors);
+        }
+        for (const auto& name : names) {
+            parent_scope.add_name(name, Type::make_any());
+        }
+    }
 
     virtual void dump(std::ostream& out) const override {
         out << "local ";
@@ -483,6 +648,20 @@ public:
         exprs(std::move(e)) {}
     std::vector<std::string> names;
     std::vector<std::unique_ptr<NExpr>> exprs;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        for (const auto& name : names) {
+            if (parent_scope.get_type_of(name)) {
+                errors.push_back(CompileError{"Global variable shadows name `" + name + "`"});
+            }
+        }
+        for (const auto& expr : exprs) {
+            expr->check(parent_scope, errors);
+        }
+        for (const auto& name : names) {
+            parent_scope.add_name(name, Type::make_any());
+        }
+    }
 
     virtual void dump(std::ostream& out) const override {
         if (exprs.empty()) {
@@ -550,6 +729,12 @@ public:
 
 class NDots : public NExpr {
 public:
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        if (!parent_scope.get_dots_type()) {
+            errors.push_back(CompileError{"Scope does not contain `...`"});
+        }
+    }
+
     virtual void dump(std::ostream& out) const override {
         out << "...";
     }
@@ -563,6 +748,15 @@ public:
         block(std::move(b)) {}
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NBlock> block;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        params->check(parent_scope, errors);
+
+        auto this_scope = Scope(&parent_scope);
+        params->add_to_scope(this_scope);
+
+        block->check(this_scope, errors);
+    }
 
     virtual void dump(std::ostream& out) const override {
         out << "function(" << *params << ")\n";
@@ -580,6 +774,10 @@ public:
     NFieldExpr(std::unique_ptr<NExpr> e) : expr(std::move(e)) {}
     std::unique_ptr<NExpr> expr;
     
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        expr->check(parent_scope, errors);
+    }
+
     virtual void dump(std::ostream& out) const override {
         out << *expr;
     }
@@ -594,6 +792,10 @@ public:
     std::string key;
     std::unique_ptr<NExpr> value;
     
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        value->check(parent_scope, errors);
+    }
+
     virtual void dump(std::ostream& out) const override {
         out << key << "=" << *value;
     }
@@ -608,6 +810,11 @@ public:
     std::unique_ptr<NExpr> key;
     std::unique_ptr<NExpr> value;
     
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        key->check(parent_scope, errors);
+        value->check(parent_scope, errors);
+    }
+
     virtual void dump(std::ostream& out) const override {
         out << "[" << *key << "]=" << *value;
     }
@@ -619,6 +826,12 @@ public:
     NTableConstructor(std::vector<std::unique_ptr<NField>> f) : fields(std::move(f)) {}
     std::vector<std::unique_ptr<NField>> fields;
     
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        for (const auto& field : fields) {
+            field->check(parent_scope, errors);
+        }
+    }
+
     virtual void dump(std::ostream& out) const override {
         out << "{\n";
         for (const auto& field : fields) {
@@ -639,6 +852,11 @@ public:
     std::unique_ptr<NExpr> left;
     std::unique_ptr<NExpr> right;
 
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        left->check(parent_scope, errors);
+        right->check(parent_scope, errors);
+    }
+
     virtual void dump(std::ostream& out) const override {
         out << "(" << *left << " " << opname << " " << *right << ")";
     }
@@ -652,6 +870,10 @@ public:
         expr(std::move(e)) {}
     std::string opname;
     std::unique_ptr<NExpr> expr;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        expr->check(parent_scope, errors);
+    }
 
     virtual void dump(std::ostream& out) const override {
         out << "(" << opname << " " << *expr << ")";

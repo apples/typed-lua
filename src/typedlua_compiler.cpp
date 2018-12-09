@@ -5,9 +5,11 @@
 
 #include <sstream>
 
-typedlua_compiler::typedlua_compiler() {}
+namespace typedlua {
 
-auto typedlua_compiler::compile(std::string_view source, std::string_view name) -> std::string {
+Compiler::Compiler() {}
+
+auto Compiler::compile(std::string_view source, std::string_view name) -> Result {
     yyscan_t scanner;
     typedlualex_init(&scanner);
     auto buffer = typedlua_scan_bytes(source.data(), source.length(), scanner);
@@ -15,13 +17,23 @@ auto typedlua_compiler::compile(std::string_view source, std::string_view name) 
     typedlua::ast::Node* root = nullptr;
 
     std::ostringstream oss;
+    auto rv = Result{};
 
     if (typedluaparse(scanner, root) == 0 && root) {
+        auto scope = Scope();
+        scope.disable_dots();
+        std::vector<CompileError> errors;
+        root->check(scope, errors);
         oss << *root << std::endl;
+
+        rv.new_source = oss.str();
+        rv.errors = std::move(errors);
     }
 
     typedlua_delete_buffer(buffer, scanner);
     typedlualex_destroy(scanner);
 
-    return oss.str();
+    return rv;
 }
+
+} // namespace typedlua

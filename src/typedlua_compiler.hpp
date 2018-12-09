@@ -1,12 +1,24 @@
 #pragma once
 
+#include "compile_error.hpp"
+
 #include <string>
 #include <string_view>
+#include <vector>
 
-class typedlua_compiler {
+namespace typedlua {
+
+class Compiler {
 public:
-    typedlua_compiler();
+    struct Result {
+        std::string new_source;
+        std::vector<CompileError> errors;
+    };
 
-    auto compile(std::string_view source, std::string_view name) -> std::string;
+    Compiler();
+
+    auto compile(std::string_view source, std::string_view name) -> Result;
 private:
 };
+
+} // namespace typedlua
