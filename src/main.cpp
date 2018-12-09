@@ -25,6 +25,7 @@ int main(int argc, char **argv) {
                 std::cout << "Warning: ";
                 break;
         }
+        std::cout << error.location.last_line << ": ";
         std::cout << error.message << std::endl;
     }
 }

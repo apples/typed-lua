@@ -15,6 +15,7 @@ auto Compiler::compile(std::string_view source, std::string_view name) -> Result
     yyscan_t scanner;
     typedlualex_init(&scanner);
     auto buffer = typedlua_scan_bytes(source.data(), source.length(), scanner);
+    typedluaset_lineno(1, scanner);
     
     typedlua::ast::Node* root = nullptr;
 

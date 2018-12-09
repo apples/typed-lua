@@ -4,6 +4,7 @@
 #include "type.hpp"
 #include "scope.hpp"
 #include "compile_error.hpp"
+#include "location.hpp"
 
 #include <iostream>
 #include <memory>
@@ -24,6 +25,8 @@ public:
     virtual void dump(std::ostream& out) const {
         out << "--[[NOT IMPLEMENTED]]";
     }
+
+    Location location;
 };
 
 inline std::ostream& operator<<(std::ostream& out, const Node& n) {
@@ -69,7 +72,7 @@ public:
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         if (!parent_scope.get_type(name)) {
-            errors.emplace_back("Type `" + name + "` not in scope");
+            errors.emplace_back("Type `" + name + "` not in scope", location);
         }
     }
 
@@ -120,7 +123,7 @@ public:
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         if (!parent_scope.get_type_of(name)) {
-            errors.push_back(CompileError{"Name `" + name + "` is not in scope"});
+            errors.emplace_back("Name `" + name + "` is not in scope", location);
             // Prevent further type errors for this name
             parent_scope.add_name(name, Type::make_any());
         }
@@ -465,7 +468,7 @@ public:
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         for (const auto &name : names) {
             if (parent_scope.get_type_of(name.name)) {
-                errors.emplace_back(CompileError::Severity::WARNING, "For-loop variable shadows name `" + name.name + "`");
+                errors.emplace_back(CompileError::Severity::WARNING, "For-loop variable shadows name `" + name.name + "`", location);
             }
             name.check(parent_scope, errors);
         }
@@ -519,7 +522,7 @@ public:
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         for (const auto& name : names) {
             if (parent_scope.get_type_of(name.name)) {
-                errors.emplace_back(CompileError::Severity::WARNING, "Function parameter shadows name `" + name.name + "`");
+                errors.emplace_back(CompileError::Severity::WARNING, "Function parameter shadows name `" + name.name + "`", location);
             }
             name.check(parent_scope, errors);
         }
@@ -680,7 +683,7 @@ public:
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         for (const auto& name : names) {
             if (parent_scope.get_type_of(name.name)) {
-                errors.emplace_back(CompileError::Severity::WARNING, "Local variable shadows name `" + name.name + "`");
+                errors.emplace_back(CompileError::Severity::WARNING, "Local variable shadows name `" + name.name + "`", location);
             }
             name.check(parent_scope, errors);
         }
@@ -728,7 +731,7 @@ public:
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         for (const auto& name : names) {
             if (parent_scope.get_type_of(name.name)) {
-                errors.push_back(CompileError{"Global variable shadows name `" + name.name + "`"});
+                errors.emplace_back("Global variable shadows name `" + name.name + "`", location);
             }
             name.check(parent_scope, errors);
         }
@@ -808,7 +811,7 @@ class NDots : public NExpr {
 public:
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         if (!parent_scope.get_dots_type()) {
-            errors.push_back(CompileError{"Scope does not contain `...`"});
+            errors.emplace_back("Scope does not contain `...`", location);
         }
     }
 

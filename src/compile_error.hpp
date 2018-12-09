@@ -1,5 +1,7 @@
 #pragma once
 
+#include "location.hpp"
+
 #include <string>
 #include <utility>
 
@@ -13,10 +15,11 @@ struct CompileError {
 
     Severity severity = Severity::ERROR;
     std::string message;
+    Location location;
 
     CompileError() = default;
-    CompileError(std::string m) : message(std::move(m)) {}
-    CompileError(Severity s, std::string m) : severity(s), message(std::move(m)) {}
+    CompileError(std::string m, Location l) : message(std::move(m)), location(l) {}
+    CompileError(Severity s, std::string m, Location l) : severity(s), message(std::move(m)), location(l) {}
 };
 
 } // namespace typedlua

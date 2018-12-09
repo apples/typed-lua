@@ -14,7 +14,12 @@
 
 %code requires {
     #include "node.hpp"
+    #include "location.hpp"
     #include <string>
+
+    using TYPEDLUALTYPE = typedlua::Location;
+    #define TYPEDLUALTYPE_IS_DECLARED 1
+    #define TYPEDLUALTYPE_IS_TRIVIAL 1
 }
 
 %union {
@@ -48,6 +53,13 @@
     static std::unique_ptr<NExpr> ptr(NExpr* expr) {
         return std::unique_ptr<NExpr>(expr);
     }
+
+    #define BINOP(OBJ, NAME, LEFT, RIGHT, LOC) \
+        OBJ = new NBinop(NAME, ptr(LEFT), ptr(RIGHT)); \
+        OBJ->location = LOC;
+    #define UNARYOP(OBJ, NAME, EXPR, LOC) \
+        OBJ = new NUnaryop(NAME, ptr(EXPR)); \
+        OBJ->location = LOC;
 }
 
 %destructor { delete $$; } <string>
@@ -117,36 +129,44 @@ chunk: block { root = $1; }
 block: statseq { $$ = $1; }
      | statseq retstat {
          $$ = $1;
+         $$->location = @$;
          $$->children.push_back(std::unique_ptr<Node>($retstat));
      }
      | retstat {
          $$ = new NBlock();
+         $$->location = @$;
          $$->children.push_back(std::unique_ptr<Node>($retstat));
      }
-     | %empty { $$ = new NBlock(); }
+     | %empty {
+         $$ = new NBlock();
+         $$->location = @$;
+     }
      ;
 
 statseq: stat {
            $$ = new NBlock();
+           $$->location = @$;
            $$->children.push_back(std::unique_ptr<Node>($1));
        }
        | statseq stat {
            $$ = $1;
+           $$->location = @$;
            $$->children.push_back(std::unique_ptr<Node>($2));
        }
        ;
 
-retstat: TRETURN { $$ = new NReturn(); }
+retstat: TRETURN { $$ = new NReturn(); $$->location = @$; }
        | TRETURN explist {
            $$ = new NReturn(std::move(*$explist));
+           $$->location = @$;
            delete $explist;
        }
-       | retstat ';' { $$ = $1; }
+       | retstat ';' { $$ = $1; $$->location = @$; }
        ;
 
 prefixexpr: var { $$ = $1; }
           | functioncall { $$ = $1; }
-          | '(' expr ')' { $$ = $2; }
+          | '(' expr ')' { $$ = $2; $$->location = @$; }
           ;
 
 expr: TNIL { $$ = new NNil(); }
@@ -162,13 +182,13 @@ expr: TNIL { $$ = new NNil(); }
     | unaryopcall { $$ = $1; }
     ;
 
-stat: ';' { $$ = new NEmpty(); }
+stat: ';' { $$ = new NEmpty(); $$->location = @$; }
     | assign { $$ = $1; }
     | functioncall { $$ = $1; }
     | label { $$ = $1; }
-    | TBREAK { $$ = new NBreak(); }
+    | TBREAK { $$ = new NBreak(); $$->location = @$; }
     | goto { $$ = $1; }
-    | TDO block TEND { $$ = $2; $2->scoped = true; }
+    | TDO block TEND { $$ = $2; $2->scoped = true; $$->location = @$; }
     | while { $$ = $1; }
     | repeat { $$ = $1; }
     | if { $$ = $1; }
@@ -183,70 +203,79 @@ stat: ';' { $$ = new NEmpty(); }
 namelist: TIDENTIFIER {
             $$ = new std::vector<NNameDecl>();
             $$->emplace_back(std::move(*$1));
+            $$->back().location = @$;
             delete $1;
         }
         | TIDENTIFIER ':' type {
             $$ = new std::vector<NNameDecl>();
             $$->emplace_back(std::move(*$1), std::unique_ptr<NType>($type));
+            $$->back().location = @$;
             delete $1;
         }
         | namelist ',' TIDENTIFIER {
             $$ = $1;
             $$->emplace_back(std::move(*$3));
+            $$->back().location = @3;
             delete $3;
         }
         | namelist ',' TIDENTIFIER ':' type {
             $$ = $1;
             $$->emplace_back(std::move(*$3), std::unique_ptr<NType>($type));
+            $$->back().location = @3;
+            $$->back().location.last_line = @5.last_line;
+            $$->back().location.last_column = @5.last_column;
             delete $3;
         }
         ;
 
 type: TIDENTIFIER {
         $$ = new NTypeName(std::move(*$1));
+        $$->location = @$;
         delete $1;
     }
     ;
 
-binopcall: expr[l] TOR expr[r] { $$ = new NBinop("or", ptr($l), ptr($r)); }
-         | expr[l] TAND expr[r] { $$ = new NBinop("and", ptr($l), ptr($r)); }
-         | expr[l] '<' expr[r] { $$ = new NBinop("<", ptr($l), ptr($r)); }
-         | expr[l] '>' expr[r] { $$ = new NBinop(">", ptr($l), ptr($r)); }
-         | expr[l] TCLE expr[r] { $$ = new NBinop("<=", ptr($l), ptr($r)); }
-         | expr[l] TCGE expr[r] { $$ = new NBinop(">=", ptr($l), ptr($r)); }
-         | expr[l] TCNE expr[r] { $$ = new NBinop("~=", ptr($l), ptr($r)); }
-         | expr[l] TCEQ expr[r] { $$ = new NBinop("==", ptr($l), ptr($r)); }
-         | expr[l] '|' expr[r] { $$ = new NBinop("|", ptr($l), ptr($r)); }
-         | expr[l] '~' expr[r] { $$ = new NBinop("~", ptr($l), ptr($r)); }
-         | expr[l] '&' expr[r] { $$ = new NBinop("&", ptr($l), ptr($r)); }
-         | expr[l] TSHL expr[r] { $$ = new NBinop("<<", ptr($l), ptr($r)); }
-         | expr[l] TSHR expr[r] { $$ = new NBinop(">>", ptr($l), ptr($r)); }
-         | expr[l] TDOT2 expr[r] { $$ = new NBinop("..", ptr($l), ptr($r)); }
-         | expr[l] '+' expr[r] { $$ = new NBinop("+", ptr($l), ptr($r)); }
-         | expr[l] '-' expr[r] { $$ = new NBinop("-", ptr($l), ptr($r)); }
-         | expr[l] '*' expr[r] { $$ = new NBinop("*", ptr($l), ptr($r)); }
-         | expr[l] '/' expr[r] { $$ = new NBinop("/", ptr($l), ptr($r)); }
-         | expr[l] TSLASH2 expr[r] { $$ = new NBinop("//", ptr($l), ptr($r)); }
-         | expr[l] '%' expr[r] { $$ = new NBinop("%", ptr($l), ptr($r)); }
-         | expr[l] '^' expr[r] { $$ = new NBinop("^", ptr($l), ptr($r)); }
+binopcall: expr[l] TOR expr[r] { BINOP($$, "or", $l, $r, @$) }
+         | expr[l] TAND expr[r] { BINOP($$, "and", $l, $r, @$) }
+         | expr[l] '<' expr[r] { BINOP($$, "<", $l, $r, @$) }
+         | expr[l] '>' expr[r] { BINOP($$, ">", $l, $r, @$) }
+         | expr[l] TCLE expr[r] { BINOP($$, "<=", $l, $r, @$) }
+         | expr[l] TCGE expr[r] { BINOP($$, ">=", $l, $r, @$) }
+         | expr[l] TCNE expr[r] { BINOP($$, "~=", $l, $r, @$) }
+         | expr[l] TCEQ expr[r] { BINOP($$, "==", $l, $r, @$) }
+         | expr[l] '|' expr[r] { BINOP($$, "|", $l, $r, @$) }
+         | expr[l] '~' expr[r] { BINOP($$, "~", $l, $r, @$) }
+         | expr[l] '&' expr[r] { BINOP($$, "&", $l, $r, @$) }
+         | expr[l] TSHL expr[r] { BINOP($$, "<<", $l, $r, @$) }
+         | expr[l] TSHR expr[r] { BINOP($$, ">>", $l, $r, @$) }
+         | expr[l] TDOT2 expr[r] { BINOP($$, "..", $l, $r, @$) }
+         | expr[l] '+' expr[r] { BINOP($$, "+", $l, $r, @$) }
+         | expr[l] '-' expr[r] { BINOP($$, "-", $l, $r, @$) }
+         | expr[l] '*' expr[r] { BINOP($$, "*", $l, $r, @$) }
+         | expr[l] '/' expr[r] { BINOP($$, "/", $l, $r, @$) }
+         | expr[l] TSLASH2 expr[r] { BINOP($$, "//", $l, $r, @$) }
+         | expr[l] '%' expr[r] { BINOP($$, "%", $l, $r, @$) }
+         | expr[l] '^' expr[r] { BINOP($$, "^", $l, $r, @$) }
          ;
 
-unaryopcall: TNOT expr { $$ = new NUnaryop("not", ptr($expr)); }
-           | '#' expr { $$ = new NUnaryop("#", ptr($expr)); }
-           | '-' expr %prec NEG { $$ = new NUnaryop("-", ptr($expr)); }
-           | '~' expr %prec BNOT { $$ = new NUnaryop("~", ptr($expr)); }
+unaryopcall: TNOT expr { UNARYOP($$, "not", $expr, @$) }
+           | '#' expr { UNARYOP($$, "#", $expr, @$) }
+           | '-' expr %prec NEG { UNARYOP($$, "-", $expr, @$) }
+           | '~' expr %prec BNOT { UNARYOP($$, "~", $expr, @$) }
            ;
 
 globalvar: TGLOBAL namelist {
           $$ = new NGlobalVar(
               std::move(*$namelist),
               {});
+          $$->location = @$;
           delete $namelist;
       }
       | TGLOBAL namelist '=' explist {
             $$ = new NGlobalVar(
                 std::move(*$namelist),
                 std::move(*$explist));
+            $$->location = @$;
             delete $namelist;
             delete $explist;
       }
@@ -256,12 +285,14 @@ localvar: TLOCAL namelist {
             $$ = new NLocalVar(
                 std::move(*$namelist),
                 {});
+            $$->location = @$;
             delete $namelist;
         }
         | TLOCAL namelist '=' explist {
             $$ = new NLocalVar(
                 std::move(*$namelist),
                 std::move(*$explist));
+            $$->location = @$;
             delete $namelist;
             delete $explist;
         }
@@ -272,6 +303,7 @@ localfunc: TLOCAL TFUNCTION TIDENTIFIER[name] funcparams block TEND {
                  std::move(*$name),
                  std::unique_ptr<NFuncParams>($funcparams),
                  std::unique_ptr<NBlock>($block));
+             $$->location = @$;
              delete $name;
          }
          ;
@@ -281,6 +313,7 @@ function: TFUNCTION funcvar funcparams block TEND {
                 std::unique_ptr<NExpr>($funcvar),
                 std::unique_ptr<NFuncParams>($funcparams),
                 std::unique_ptr<NBlock>($block));
+            $$->location = @$;
         }
         | TFUNCTION funcvar ':' TIDENTIFIER[name] funcparams block TEND {
             $$ = new NSelfFunction(
@@ -288,42 +321,52 @@ function: TFUNCTION funcvar funcparams block TEND {
                 std::unique_ptr<NExpr>($funcvar),
                 std::unique_ptr<NFuncParams>($funcparams),
                 std::unique_ptr<NBlock>($block));
+            $$->location = @$;
             delete $name;
         }
         ;
 
-funcvar: TIDENTIFIER { $$ = new NIdent(std::move(*$1)); delete $1; }
+funcvar: TIDENTIFIER {
+           $$ = new NIdent(std::move(*$1));
+           $$->location = @$;
+           delete $1;
+       }
        | funcvar '.' TIDENTIFIER {
            $$ = new NTableAccess(
                std::unique_ptr<NExpr>($1),
                std::move(*$3));
+           $$->location = @$;
            delete $3;
        }
        ;
 
-funcparams: '(' ')' { $$ = new NFuncParams(); }
+funcparams: '(' ')' { $$ = new NFuncParams(); $$->location = @$; }
           | '(' TDOT3 ')' {
               $$ = new NFuncParams({}, true);
+              $$->location = @$;
           }
           | '(' namelist ')' {
               $$ = new NFuncParams(std::move(*$namelist), false);
+              $$->location = @$;
               delete $namelist;
           }
           | '(' namelist ',' TDOT3 ')' {
               $$ = new NFuncParams(std::move(*$namelist), true);
+              $$->location = @$;
               delete $namelist;
           }
           ;
 
 forgeneric: TFOR namelist TIN explist TDO block TEND {
-           $$ = new NForGeneric(
-               std::move(*$namelist),
-               std::move(*$explist),
-               std::unique_ptr<NBlock>($block));
-           delete $namelist;
-           delete $explist;
-       }
-       ;
+              $$ = new NForGeneric(
+                  std::move(*$namelist),
+                  std::move(*$explist),
+                  std::unique_ptr<NBlock>($block));
+              $$->location = @$;
+              delete $namelist;
+              delete $explist;
+          }
+          ;
 
 fornumeric: TFOR TIDENTIFIER '=' expr ',' expr ',' expr TDO block TEND {
               $$ = new NForNumeric(
@@ -332,6 +375,7 @@ fornumeric: TFOR TIDENTIFIER '=' expr ',' expr ',' expr TDO block TEND {
                   std::unique_ptr<NExpr>($6),
                   std::unique_ptr<NExpr>($8),
                   std::unique_ptr<NBlock>($10));
+              $$->location = @$;
               delete $2;
           }
           | TFOR TIDENTIFIER '=' expr ',' expr TDO block TEND {
@@ -341,6 +385,7 @@ fornumeric: TFOR TIDENTIFIER '=' expr ',' expr ',' expr TDO block TEND {
                   std::unique_ptr<NExpr>($6),
                   std::unique_ptr<NExpr>(nullptr),
                   std::unique_ptr<NBlock>($8));
+              $$->location = @$;
               delete $2;
           }
           ;
@@ -351,6 +396,7 @@ if: TIF expr TTHEN block elseifseq else TEND {
           std::unique_ptr<NBlock>($4),
           std::move(*$5),
           std::unique_ptr<NElse>($6));
+      $$->location = @$;
       delete $5;
   }
   | TIF expr TTHEN block elseifseq TEND {
@@ -359,6 +405,7 @@ if: TIF expr TTHEN block elseifseq else TEND {
           std::unique_ptr<NBlock>($4),
           std::move(*$5),
           std::unique_ptr<NElse>(nullptr));
+      $$->location = @$;
       delete $5;
   }
   | TIF expr TTHEN block else TEND {
@@ -367,6 +414,7 @@ if: TIF expr TTHEN block elseifseq else TEND {
           std::unique_ptr<NBlock>($4),
           {},
           std::unique_ptr<NElse>($5));
+      $$->location = @$;
   }
   | TIF expr TTHEN block TEND {
       $$ = new NIf(
@@ -374,6 +422,7 @@ if: TIF expr TTHEN block elseifseq else TEND {
           std::unique_ptr<NBlock>($4),
           {},
           std::unique_ptr<NElse>(nullptr));
+      $$->location = @$;
   }
   ;
 
@@ -390,16 +439,18 @@ elseifseq: elseif {
 elseif: TELSEIF expr TTHEN block {
           $$ = new NElseIf(
               std::unique_ptr<NExpr>($2), std::unique_ptr<NBlock>($4));
+          $$->location = @$;
       }
       ;
 
-else: TELSE block { $$ = new NElse(std::unique_ptr<NBlock>($2)); }
+else: TELSE block { $$ = new NElse(std::unique_ptr<NBlock>($2)); $$->location = @$; }
     ;
 
 repeat: TREPEAT block TUNTIL expr {
           $$ = new NRepeat(
               std::unique_ptr<NBlock>($2),
               std::unique_ptr<NExpr>($4));
+          $$->location = @$;
       }
       ;
 
@@ -407,6 +458,7 @@ while: TWHILE expr TDO block TEND {
          $$ = new NWhile(
              std::unique_ptr<NExpr>($2),
              std::unique_ptr<NBlock>($4));
+         $$->location = @$;
      }
      ;
 
@@ -418,6 +470,7 @@ goto: TGOTO TIDENTIFIER {
 
 label: TCOLON2 TIDENTIFIER TCOLON2 {
          $$ = new NLabel(std::move(*$2));
+         $$->location = @$;
          delete $2;
      }
      ;
@@ -426,6 +479,7 @@ assign: varlist '=' explist {
           $$ = new NAssignment(
               std::move(*$varlist),
               std::move(*$explist));
+          $$->location = @$;
       }
       ;
 
@@ -433,12 +487,14 @@ functioncall: prefixexpr args {
                 $$ = new NFunctionCall(
                     std::unique_ptr<NExpr>($1),
                     std::unique_ptr<NArgSeq>($2));
+                $$->location = @$;
             }
             ;
 
-tableconstructor: '{' '}' { $$ = new NTableConstructor(); }
+tableconstructor: '{' '}' { $$ = new NTableConstructor(); $$->location = @$; }
                 | '{' fieldlist '}' {
                     $$ = new NTableConstructor(std::move(*$fieldlist));
+                    $$->location = @$;
                     delete $fieldlist;
                 }
                 ;
@@ -458,17 +514,19 @@ fieldlist: field {
 
 fieldsep: ',' | ';' ;
 
-field: expr { $$ = new NFieldExpr(std::unique_ptr<NExpr>($expr)); }
+field: expr { $$ = new NFieldExpr(std::unique_ptr<NExpr>($expr)); $$->location = @$; }
      | TIDENTIFIER[name] '=' expr {
          $$ = new NFieldNamed(
              std::move(*$name),
              std::unique_ptr<NExpr>($expr));
+         $$->location = @$;
          delete $name;
      }
      | '[' expr[key] ']' '=' expr[value] {
          $$ = new NFieldKey(
              std::unique_ptr<NExpr>($key),
              std::unique_ptr<NExpr>($value));
+         $$->location = @$;
      }
      ;
 
@@ -476,6 +534,7 @@ functiondef: TFUNCTION funcparams block TEND {
                $$ = new NFunctionDef(
                    std::unique_ptr<NFuncParams>($funcparams),
                    std::unique_ptr<NBlock>($block));
+               $$->location = @$;
            }
            ;
 
@@ -489,16 +548,22 @@ explist: expr {
        }
        ;
 
-var: TIDENTIFIER { $$ = new NIdent(std::move(*$1)); delete $1; }
+var: TIDENTIFIER {
+       $$ = new NIdent(std::move(*$1));
+       $$->location = @$;
+       delete $1;
+   }
    | prefixexpr '[' expr ']' {
        $$ = new NSubscript(
            std::unique_ptr<NExpr>($1),
            std::unique_ptr<NExpr>($3));
+       $$->location = @$;
    }
    | prefixexpr '.' TIDENTIFIER {
        $$ = new NTableAccess(
            std::unique_ptr<NExpr>($1),
            std::move(*$3));
+       $$->location = @$;
        delete $3;
    }
    ;
@@ -515,10 +580,12 @@ varlist: var {
 
 argseq: expr {
           $$ = new NArgSeq();
+          $$->location = @$;
           $$->args.push_back(std::unique_ptr<NExpr>($1));
       }
       | argseq ',' expr {
           $$ = $1;
+          $$->location = @$;
           $$->args.push_back(std::unique_ptr<NExpr>($3));
       }
       ;
