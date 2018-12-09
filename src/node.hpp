@@ -89,6 +89,60 @@ public:
     }
 };
 
+class NTypeFunctionParam : public Node {
+public:
+    NTypeFunctionParam() = default;
+    NTypeFunctionParam(std::string name, std::unique_ptr<NType> type) : name(std::move(name)), type(std::move(type)) {}
+    std::string name;
+    std::unique_ptr<NType> type;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        type->check(parent_scope, errors);
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << name << ":" << *type;
+    }
+};
+
+class NTypeFunction : public NType {
+public:
+    NTypeFunction() = default;
+    NTypeFunction(std::vector<NTypeFunctionParam> p, std::unique_ptr<NType> r) :
+        params(std::move(p)),
+        ret(std::move(r)) {}
+    std::vector<NTypeFunctionParam> params;
+    std::unique_ptr<NType> ret;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        for (const auto& param : params) {
+            param.check(parent_scope, errors);
+        }
+        ret->check(parent_scope, errors);
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << "(";
+        bool first = true;
+        for (const auto& param : params) {
+            if (!first) {
+                out << ",";
+            }
+            out << param;
+            first = false;
+        }
+        out << "):" << *ret;
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        std::vector<Type> paramtypes;
+        for (const auto& param : params) {
+            paramtypes.push_back(param.type->get_type(scope));
+        }
+        return Type::make_function(std::move(paramtypes), ret->get_type(scope));
+    }
+};
+
 class NNameDecl : public Node {
 public:
     NNameDecl() = default;

@@ -37,6 +37,7 @@
     typedlua::ast::NFuncParams* params;
     std::vector<typedlua::ast::NNameDecl>* namedecls;
     typedlua::ast::NType* type;
+    std::vector<typedlua::ast::NTypeFunctionParam>* typefuncparams;
 }
 
 %code {
@@ -76,6 +77,7 @@
 %destructor { delete $$; } <params>
 %destructor { delete $$; } <namedecls>
 %destructor { delete $$; } <type>
+%destructor { delete $$; } <typefuncparams>
 
 %token TCEQ TCNE TCLE TCGE TSHL TSHR
 %token TSLASH2 TDOT2 TDOT3 TCOLON2
@@ -118,6 +120,7 @@
 %type <params> funcparams
 %type <namedecls> namelist
 %type <type> type funcret
+%type <typefuncparams> typefuncparams
 
 %start chunk
 
@@ -233,7 +236,48 @@ type: TIDENTIFIER {
         $$->location = @$;
         delete $1;
     }
+    | '(' ')' ':' type[ret] {
+        $$ = new NTypeFunction({}, std::unique_ptr<NType>($ret));
+        $$->location = @$;
+    }
+    | '(' typefuncparams ')' ':' type[ret] {
+        $$ = new NTypeFunction(std::move(*$typefuncparams), std::unique_ptr<NType>($ret));
+        $$->location = @$;
+        delete $typefuncparams;
+    }
     ;
+
+typefuncparams: ':' type {
+                  $$ = new std::vector<NTypeFunctionParam>();
+                  $$->emplace_back("", std::unique_ptr<NType>($type));
+                  $$->back().location = @$;
+              }
+              | TIDENTIFIER[name] ':' type {
+                  $$ = new std::vector<NTypeFunctionParam>();
+                  $$->emplace_back(std::move(*$name), std::unique_ptr<NType>($type));
+                  $$->back().location = @$;
+                  delete $name;
+              }
+              | typefuncparams ',' ':'[colon] type {
+                  $$ = $1;
+                  $$->emplace_back("", std::unique_ptr<NType>($type));
+                  $$->back().location = {
+                      @colon.first_line,
+                      @colon.first_column,
+                      @type.last_line,
+                      @type.last_column};
+              }
+              | typefuncparams ',' TIDENTIFIER[name] ':' type {
+                  $$ = $1;
+                  $$->emplace_back(std::move(*$name), std::unique_ptr<NType>($type));
+                  $$->back().location = {
+                      @name.first_line,
+                      @name.first_column,
+                      @type.last_line,
+                      @type.last_column};
+                  delete $name;
+              }
+              ;
 
 binopcall: expr[l] TOR expr[r] { BINOP($$, "or", $l, $r, @$) }
          | expr[l] TAND expr[r] { BINOP($$, "and", $l, $r, @$) }
