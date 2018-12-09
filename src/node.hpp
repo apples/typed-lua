@@ -560,17 +560,20 @@ public:
 class NFunction : public Node {
 public:
     NFunction() = default;
-    NFunction(std::unique_ptr<NExpr> e, std::unique_ptr<NFuncParams> p, std::unique_ptr<NBlock> b) :
+    NFunction(std::unique_ptr<NExpr> e, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b) :
         expr(std::move(e)),
         params(std::move(p)),
+        ret(std::move(r)),
         block(std::move(b)) {}
     std::unique_ptr<NExpr> expr;
     std::unique_ptr<NFuncParams> params;
+    std::unique_ptr<NType> ret;
     std::unique_ptr<NBlock> block;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         expr->check(parent_scope, errors);
         params->check(parent_scope, errors);
+        if (ret) ret->check(parent_scope, errors);
 
         auto this_scope = Scope(&parent_scope);
         params->add_to_scope(this_scope);
@@ -579,7 +582,9 @@ public:
     }
 
     virtual void dump(std::ostream& out) const override {
-        out << "function " << *expr << "(" << *params << ")\n";
+        out << "function " << *expr << "(" << *params << ")";
+        if (ret) out << "--[[:" << *ret << "]]";
+        out << "\n";
         out << *block;
         out << "end";
     }
@@ -588,19 +593,22 @@ public:
 class NSelfFunction : public Node {
 public:
     NSelfFunction() = default;
-    NSelfFunction(std::string m, std::unique_ptr<NExpr> e, std::unique_ptr<NFuncParams> p, std::unique_ptr<NBlock> b) :
+    NSelfFunction(std::string m, std::unique_ptr<NExpr> e, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b) :
         name(std::move(m)),
         expr(std::move(e)),
         params(std::move(p)),
+        ret(std::move(r)),
         block(std::move(b)) {}
     std::string name;
     std::unique_ptr<NExpr> expr;
     std::unique_ptr<NFuncParams> params;
+    std::unique_ptr<NType> ret;
     std::unique_ptr<NBlock> block;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         expr->check(parent_scope, errors);
         params->check(parent_scope, errors);
+        if (ret) ret->check(parent_scope, errors);
 
         auto this_scope = Scope(&parent_scope);
         params->add_to_scope(this_scope);
@@ -609,7 +617,9 @@ public:
     }
 
     virtual void dump(std::ostream& out) const override {
-        out << "function " << *expr << ":" << name << "(" << *params << ")\n";
+        out << "function " << *expr << ":" << name << "(" << *params << ")";
+        if (ret) out << "--[[:" << *ret << "]]";
+        out << "\n";
         out << *block;
         out << "end";
     }
@@ -618,16 +628,19 @@ public:
 class NLocalFunction : public Node {
 public:
     NLocalFunction() = default;
-    NLocalFunction(std::string n, std::unique_ptr<NFuncParams> p, std::unique_ptr<NBlock> b) :
+    NLocalFunction(std::string n, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b) :
         name(std::move(n)),
         params(std::move(p)),
+        ret(std::move(r)),
         block(std::move(b)) {}
     std::string name;
     std::unique_ptr<NFuncParams> params;
+    std::unique_ptr<NType> ret;
     std::unique_ptr<NBlock> block;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         params->check(parent_scope, errors);
+        if (ret) ret->check(parent_scope, errors);
 
         auto this_scope = Scope(&parent_scope);
         this_scope.add_name(name, Type::make_any());
@@ -637,7 +650,9 @@ public:
     }
 
     virtual void dump(std::ostream& out) const override {
-        out << "local function " << name << "(" << *params << ")\n";
+        out << "local function " << name << "(" << *params << ")";
+        if (ret) out << "--[[:" << *ret << "]]";
+        out << "\n";
         out << *block;
         out << "end";
     }
@@ -823,14 +838,16 @@ public:
 class NFunctionDef : public NExpr {
 public:
     NFunctionDef() = default;
-    NFunctionDef(std::unique_ptr<NFuncParams> p, std::unique_ptr<NBlock> b) :
+    NFunctionDef(std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b) :
         params(std::move(p)),
         block(std::move(b)) {}
     std::unique_ptr<NFuncParams> params;
+    std::unique_ptr<NType> ret;
     std::unique_ptr<NBlock> block;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         params->check(parent_scope, errors);
+        if (ret) ret->check(parent_scope, errors);
 
         auto this_scope = Scope(&parent_scope);
         params->add_to_scope(this_scope);
@@ -839,7 +856,9 @@ public:
     }
 
     virtual void dump(std::ostream& out) const override {
-        out << "function(" << *params << ")\n";
+        out << "function(" << *params << ")";
+        if (ret) out << "--[[:" << *ret << "]]";
+        out << "\n";
         out << *block;
         out << "end";
     }

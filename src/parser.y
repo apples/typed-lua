@@ -117,7 +117,7 @@
 %type <fields> fieldlist
 %type <params> funcparams
 %type <namedecls> namelist
-%type <type> type
+%type <type> type funcret
 
 %start chunk
 
@@ -298,33 +298,40 @@ localvar: TLOCAL namelist {
         }
         ;
 
-localfunc: TLOCAL TFUNCTION TIDENTIFIER[name] funcparams block TEND {
+localfunc: TLOCAL TFUNCTION TIDENTIFIER[name] funcparams funcret block TEND {
              $$ = new NLocalFunction(
                  std::move(*$name),
                  std::unique_ptr<NFuncParams>($funcparams),
+                 std::unique_ptr<NType>($funcret),
                  std::unique_ptr<NBlock>($block));
              $$->location = @$;
              delete $name;
          }
          ;
 
-function: TFUNCTION funcvar funcparams block TEND {
+function: TFUNCTION funcvar funcparams funcret block TEND {
             $$ = new NFunction(
                 std::unique_ptr<NExpr>($funcvar),
                 std::unique_ptr<NFuncParams>($funcparams),
+                std::unique_ptr<NType>($funcret),
                 std::unique_ptr<NBlock>($block));
             $$->location = @$;
         }
-        | TFUNCTION funcvar ':' TIDENTIFIER[name] funcparams block TEND {
+        | TFUNCTION funcvar ':' TIDENTIFIER[name] funcparams funcret block TEND {
             $$ = new NSelfFunction(
                 std::move(*$name),
                 std::unique_ptr<NExpr>($funcvar),
                 std::unique_ptr<NFuncParams>($funcparams),
+                std::unique_ptr<NType>($funcret),
                 std::unique_ptr<NBlock>($block));
             $$->location = @$;
             delete $name;
         }
         ;
+
+funcret: %empty { $$ = nullptr; }
+       | ':' type { $$ = $type; }
+       ;
 
 funcvar: TIDENTIFIER {
            $$ = new NIdent(std::move(*$1));
@@ -530,9 +537,10 @@ field: expr { $$ = new NFieldExpr(std::unique_ptr<NExpr>($expr)); $$->location =
      }
      ;
 
-functiondef: TFUNCTION funcparams block TEND {
+functiondef: TFUNCTION funcparams funcret block TEND {
                $$ = new NFunctionDef(
                    std::unique_ptr<NFuncParams>($funcparams),
+                   std::unique_ptr<NType>($funcret),
                    std::unique_ptr<NBlock>($block));
                $$->location = @$;
            }
