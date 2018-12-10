@@ -963,6 +963,7 @@ public:
     NFunctionDef() = default;
     NFunctionDef(std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b) :
         params(std::move(p)),
+        ret(std::move(r)),
         block(std::move(b)) {}
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NType> ret;
