@@ -35,7 +35,8 @@ inline std::ostream& operator<<(std::ostream& out, const Node& n) {
 }
 
 class NExpr : public Node {
-
+public:
+    virtual Type get_type(const Scope& scope) const = 0;
 };
 
 class NBlock : public Node {
@@ -186,6 +187,14 @@ public:
     virtual void dump(std::ostream& out) const override {
         out << name;
     }
+
+    virtual Type get_type(const Scope& scope) const override {
+        if (auto type = scope.get_type_of(name)) {
+            return *type;
+        } else {
+            return Type::make_any();
+        }
+    }
 };
 
 class NSubscript : public NExpr {
@@ -205,6 +214,10 @@ public:
     virtual void dump(std::ostream& out) const override {
         out << *prefix << "[" << *subscript << "]";
     }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return Type::make_any();
+    }
 };
 
 class NTableAccess : public NExpr {
@@ -222,6 +235,10 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << *prefix << "." << name;
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return Type::make_any();
     }
 };
 
@@ -267,6 +284,14 @@ public:
         if (args) out << *args;
         out << ")";
     }
+
+    virtual Type get_type(const Scope& scope) const override {
+        auto functype = prefix->get_type(scope);
+        switch (functype.get_tag()) {
+            case Type::Tag::FUNCTION: return *functype.get_function().ret;
+            default: return Type::make_any();
+        }
+    }
 };
 
 class NNumberLiteral : public NExpr {
@@ -277,6 +302,10 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << value;
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return Type::make_luatype(LuaType::NUMBER);
     }
 };
 
@@ -296,6 +325,18 @@ public:
 
         for (const auto& expr : exprs) {
             expr->check(parent_scope, errors);
+        }
+
+        for (auto i = 0u; i < exprs.size(); ++i) {
+            if (i < vars.size()) {
+                auto r = is_assignable(vars[i]->get_type(parent_scope), exprs[i]->get_type(parent_scope));
+                if (!r.yes) {
+                    errors.emplace_back(to_string(r), location);
+                }
+            } else {
+                errors.emplace_back(CompileError::Severity::WARNING, "Too many expressions on right side of assignment", location);
+                break;
+            }
         }
     }
 
@@ -852,6 +893,10 @@ public:
     virtual void dump(std::ostream& out) const override {
         out << "nil";
     }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return Type::make_luatype(LuaType::NIL);
+    }
 };
 
 class NBooleanLiteral : public NExpr {
@@ -863,6 +908,10 @@ public:
     virtual void dump(std::ostream& out) const override {
         out << (value ? "true" : "false");
     }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return Type::make_luatype(LuaType::BOOLEAN);
+    }
 };
 
 class NStringLiteral : public NExpr {
@@ -873,6 +922,10 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << value;
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return Type::make_luatype(LuaType::STRING);
     }
 };
 
@@ -886,6 +939,10 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << "...";
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return Type::make_any();
     }
 };
 
@@ -915,6 +972,15 @@ public:
         out << "\n";
         out << *block;
         out << "end";
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        std::vector<Type> paramtypes;
+        for (const auto& name : params->names) {
+            paramtypes.push_back(name.get_type(scope));
+        }
+        auto rettype = ret ? ret->get_type(scope) : Type::make_any();
+        return Type::make_function(std::move(paramtypes), std::move(rettype));
     }
 };
 
@@ -992,6 +1058,10 @@ public:
         }
         out << "}";
     }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return Type::make_any();
+    }
 };
 
 class NBinop : public NExpr {
@@ -1013,6 +1083,10 @@ public:
     virtual void dump(std::ostream& out) const override {
         out << "(" << *left << " " << opname << " " << *right << ")";
     }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return Type::make_any();
+    }
 };
 
 class NUnaryop : public NExpr {
@@ -1030,6 +1104,10 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << "(" << opname << " " << *expr << ")";
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return Type::make_any();
     }
 };
 
