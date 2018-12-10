@@ -6,3 +6,4 @@ x = function ():number end
 local function f():number end
 
 x = f()
+x = f

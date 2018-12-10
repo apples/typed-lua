@@ -650,6 +650,14 @@ public:
             scope.disable_dots();
         }
     }
+
+    std::vector<Type> get_types(const Scope& scope) const {
+        std::vector<Type> rv;
+        for (const auto& name : names) {
+            rv.push_back(name.get_type(scope));
+        }
+        return rv;
+    }
 };
 
 class NFunction : public Node {
@@ -737,8 +745,12 @@ public:
         params->check(parent_scope, errors);
         if (ret) ret->check(parent_scope, errors);
 
+        auto paramtypes = params->get_types(parent_scope);
+        auto rettype = ret ? ret->get_type(parent_scope) : Type::make_any();
+        auto functype = Type::make_function(std::move(paramtypes), std::move(rettype));
+        parent_scope.add_name(name, std::move(functype));
+
         auto this_scope = Scope(&parent_scope);
-        this_scope.add_name(name, Type::make_any());
         params->add_to_scope(this_scope);
 
         block->check(this_scope, errors);
