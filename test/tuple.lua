@@ -1,8 +1,9 @@
-
-local function f(): [:number, :string, ...]
+local function func(): [a: number, b: string]
     return 7, "asdf"
 end
 
 local x: number, y: number
 
-x, y = f()
+x, y = func()
+
+x = func()
