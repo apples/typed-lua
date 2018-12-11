@@ -144,6 +144,47 @@ public:
     }
 };
 
+class NTypeTuple : public NType {
+public:
+    NTypeTuple() = default;
+    NTypeTuple(std::vector<NTypeFunctionParam> p, bool v) : params(std::move(p)), variadic(v) {}
+    std::vector<NTypeFunctionParam> params;
+    bool variadic;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        for (const auto& param : params) {
+            param.check(parent_scope, errors);
+        }
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << "[";
+        bool first = true;
+        for (const auto& param : params) {
+            if (!first) {
+                out << ",";
+            }
+            out << param;
+            first = false;
+        }
+        if (variadic) {
+            if (!first) {
+                out << ",";
+            }
+            out << "...";
+        }
+        out << "]";
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        std::vector<Type> paramtypes;
+        for (const auto& param : params) {
+            paramtypes.push_back(param.type->get_type(scope));
+        }
+        return Type::make_tuple(std::move(paramtypes), variadic);
+    }
+};
+
 class NNameDecl : public Node {
 public:
     NNameDecl() = default;

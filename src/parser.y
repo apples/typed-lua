@@ -119,7 +119,7 @@
 %type <fields> fieldlist
 %type <params> funcparams
 %type <namedecls> namelist
-%type <type> type funcret
+%type <type> type funcret typetuple rettype
 %type <typefuncparams> typefuncparams
 
 %start chunk
@@ -236,16 +236,36 @@ type: TIDENTIFIER {
         $$->location = @$;
         delete $1;
     }
-    | '(' ')' ':' type[ret] {
+    | '(' ')' ':' rettype[ret] {
         $$ = new NTypeFunction({}, std::unique_ptr<NType>($ret));
         $$->location = @$;
     }
-    | '(' typefuncparams ')' ':' type[ret] {
+    | '(' typefuncparams ')' ':' rettype[ret] {
         $$ = new NTypeFunction(std::move(*$typefuncparams), std::unique_ptr<NType>($ret));
         $$->location = @$;
         delete $typefuncparams;
     }
     ;
+
+rettype: type { $$ = $1; }
+       | typetuple { $$ = $1; }
+       ;
+
+typetuple: '[' typefuncparams ']' {
+             $$ = new NTypeTuple(std::move(*$typefuncparams), false);
+             $$->location = @$;
+             delete $typefuncparams;
+         }
+         | '[' typefuncparams ',' TDOT3 ']' {
+             $$ = new NTypeTuple(std::move(*$typefuncparams), true);
+             $$->location = @$;
+             delete $typefuncparams;
+         }
+         | '[' TDOT3 ']' {
+             $$ = new NTypeTuple({}, true);
+             $$->location = @$;
+         }
+         ;
 
 typefuncparams: ':' type {
                   $$ = new std::vector<NTypeFunctionParam>();
@@ -374,7 +394,7 @@ function: TFUNCTION funcvar funcparams funcret block TEND {
         ;
 
 funcret: %empty { $$ = nullptr; }
-       | ':' type { $$ = $type; }
+       | ':' rettype { $$ = $rettype; }
        ;
 
 funcvar: TIDENTIFIER {
