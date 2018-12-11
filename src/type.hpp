@@ -32,13 +32,19 @@ struct FunctionType {
         ret(std::make_unique<Type>(*other.ret)) {}
 };
 
+struct TupleType {
+    std::vector<Type> types;
+    bool is_variadic = false;
+};
+
 class Type {
 public:
     enum class Tag {
         VOID,
         ANY,
         LUATYPE,
-        FUNCTION
+        FUNCTION,
+        TUPLE
     };
 
     Type() : tag(Tag::VOID) {}
@@ -90,11 +96,20 @@ public:
         return type;
     }
 
+    static Type make_tuple(std::vector<Type> types, bool is_variadic) {
+        auto type = Type{};
+        type.tag = Tag::TUPLE;
+        new (&type.tuple) TupleType{std::move(types), is_variadic};
+        return type;
+    }
+
     const Tag& get_tag() const { return tag; }
 
     const LuaType& get_luatype() const { return luatype; }
 
     const FunctionType& get_function() const { return function; }
+
+    const TupleType& get_tuple() const { return tuple; }
 
 private:
     void destroy() {
@@ -103,6 +118,7 @@ private:
             case Tag::ANY: break;
             case Tag::LUATYPE: break;
             case Tag::FUNCTION: std::destroy_at(&function); break;
+            case Tag::TUPLE: std::destroy_at(&tuple); break;
             default: throw std::logic_error("Type tag not implemented");
         }
     }
@@ -113,6 +129,7 @@ private:
             case Tag::ANY: break;
             case Tag::LUATYPE: luatype = other.luatype; break;
             case Tag::FUNCTION: new (&function) FunctionType(other.function); break;
+            case Tag::TUPLE: new (&tuple) TupleType(other.tuple); break;
             default: throw std::logic_error("Type tag not implemented");
         }
     }
@@ -120,6 +137,7 @@ private:
     void assign_from(Type&& other) {
         switch (tag) {
             case Tag::FUNCTION: new (&function) FunctionType(std::move(other.function)); break;
+            case Tag::TUPLE: new (&tuple) TupleType(std::move(other.tuple)); break;
             default: assign_from(other);
         }
     }
@@ -128,6 +146,7 @@ private:
     union {
         LuaType luatype;
         FunctionType function;
+        TupleType tuple;
     };
 };
 
@@ -159,12 +178,34 @@ inline std::string to_string(const FunctionType& function) {
     return oss.str();
 }
 
+inline std::string to_string(const TupleType& tuple) {
+    std::ostringstream oss;
+    oss << "[";
+    bool first = true;
+    for (const auto& type : tuple.types) {
+        if (!first) {
+            oss << ",";
+        }
+        oss << to_string(type);
+        first = false;
+    }
+    if (tuple.is_variadic) {
+        if (!first) {
+            oss << ",";
+        }
+        oss << "...";
+    }
+    oss << "]";
+    return oss.str();
+}
+
 inline std::string to_string(const Type& type) {
     switch (type.get_tag()) {
         case Type::Tag::VOID: return "void";
         case Type::Tag::ANY: return "any";
         case Type::Tag::LUATYPE: return to_string(type.get_luatype());
         case Type::Tag::FUNCTION: return to_string(type.get_function());
+        case Type::Tag::TUPLE: return to_string(type.get_tuple());
         default: throw std::logic_error("Tag not implemented for to_string");
     }
 }
@@ -186,13 +227,23 @@ inline std::string to_string(const AssignResult& ar) {
     return r;
 }
 
+template <typename T, typename U>
+std::string cannot_assign(const T& lhs, const U& rhs) {
+    return "Cannot assign`" + to_string(rhs) + "` to `" + to_string(lhs) + "`";
+}
+
 inline AssignResult is_assignable(const Type& lval, const Type& rval);
 
 inline AssignResult is_assignable(const LuaType& lval, const Type& rval) {
     switch (rval.get_tag()) {
         case Type::Tag::ANY: return true;
-        case Type::Tag::LUATYPE: return lval == rval.get_luatype();
-        default: return {false, "Cannot assign `" + to_string(rval) + "` to `" + to_string(lval) + "`"};
+        case Type::Tag::LUATYPE: {
+            if (lval != rval.get_luatype()) {
+                return {false, cannot_assign(lval, rval)};
+            }
+            return true;
+        }
+        default: return {false, cannot_assign(rval, lval)};
     }
 }
 
@@ -202,7 +253,7 @@ inline AssignResult is_assignable(const FunctionType& lfunc, const Type& rval) {
         case Type::Tag::FUNCTION: {
             const auto& rfunc = rval.get_function();
             if (rfunc.params.size() < lfunc.params.size()) {
-                return {false, "Cannot assign `" + to_string(rfunc) + "` to `" + to_string(lfunc) + "` (not enough parameters)"};
+                return {false, cannot_assign(rfunc, lfunc) + " (not enough parameters)"};
             }
             for (auto i = 0u; i < rfunc.params.size(); ++i) {
                 AssignResult r;
@@ -213,7 +264,7 @@ inline AssignResult is_assignable(const FunctionType& lfunc, const Type& rval) {
                 }
                 if (!r.yes) {
                     r.messages.push_back("At parameter " + std::to_string(i));
-                    r.messages.push_back("Cannot assign `" + to_string(rfunc) + "` to `" + to_string(lfunc) + "`");
+                    r.messages.push_back(cannot_assign(rfunc, lfunc));
                     return r;
                 }
             }
@@ -223,7 +274,7 @@ inline AssignResult is_assignable(const FunctionType& lfunc, const Type& rval) {
             }
             return r;
         }
-        default: return {false, "Cannot convert `" + to_string(rval) + "` to `" + to_string(lfunc) + "`"};
+        default: return {false, cannot_assign(rval, lfunc)};
     }
 }
 
@@ -233,8 +284,44 @@ inline AssignResult is_assignable(const Type& lval, const Type& rval) {
         case Type::Tag::ANY: return true;
         case Type::Tag::LUATYPE: return is_assignable(lval.get_luatype(), rval);
         case Type::Tag::FUNCTION: return is_assignable(lval.get_function(), rval);
+        case Type::Tag::TUPLE: return {false, "Cannot assign to tuple"};
         default: throw std::logic_error("Tag not implemented for assignment");
     }
+}
+
+inline AssignResult is_assignable(const std::vector<Type>& lhs, const std::vector<Type>& rhs, bool variadic) {
+    if (!rhs.empty() && rhs.back().get_tag() == Type::Tag::TUPLE) {
+        const auto& tup = rhs.back().get_tuple();
+        auto newrhs = std::vector<Type>(rhs.begin(), rhs.end() - 1);
+        newrhs.insert(newrhs.end(), tup.types.begin(), tup.types.end());
+        return is_assignable(lhs, newrhs, tup.is_variadic);
+    }
+
+    const auto edge = std::min(lhs.size(), rhs.size());
+
+    for (auto i = 0u; i < edge; ++i) {
+        auto r = is_assignable(lhs[i], rhs[i]);
+        if (!r.yes) {
+            r.messages.push_back("At right-hand side item " + std::to_string(i + 1));
+            return r;
+        }
+    }
+
+    if (rhs.size() > lhs.size() || (rhs.size() == lhs.size() && variadic)) {
+        return {true, "Too many expressions on right-hand side"};
+    }
+
+    if (lhs.size() > rhs.size() && !variadic) {
+        for (auto i = rhs.size(); i < lhs.size(); ++i) {
+            auto r = is_assignable(lhs[i], Type::make_luatype(LuaType::NIL));
+            if (!r.yes) {
+                r.messages.push_back("At left-hand side item " + std::to_string(i + 1));
+                return r;
+            }
+        }
+    }
+
+    return true;
 }
 
 } // namespace typedlua

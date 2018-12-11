@@ -70,6 +70,23 @@ public:
         add_type("thread", Type(LuaType::THREAD));
     }
 
+    const Type* get_fixed_return_type() const {
+        if (return_type_fixed) {
+            return &return_type;
+        } else {
+            return nullptr;
+        }
+    }
+
+    void add_return_type(const Type& type) {
+        set_return_type(type);
+    }
+
+    void set_return_type(const Type& type) {
+        return_type = type;
+        return_type_fixed = true;
+    }
+
 private:
     enum class DotsState {
         INHERIT,
@@ -82,6 +99,8 @@ private:
     std::optional<Type> dots_type;
     DotsState dots_state = DotsState::INHERIT;
     std::unordered_map<std::string, Type> types;
+    Type return_type;
+    bool return_type_fixed;
 };
 
 } // namespace typedlua

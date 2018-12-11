@@ -319,24 +319,28 @@ public:
     std::vector<std::unique_ptr<NExpr>> exprs;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        std::vector<Type> lhs;
+        std::vector<Type> rhs;
+
+        lhs.reserve(vars.size());
+        rhs.reserve(exprs.size());
+
         for (const auto& var : vars) {
             var->check(parent_scope, errors);
+            lhs.push_back(var->get_type(parent_scope));
         }
 
         for (const auto& expr : exprs) {
             expr->check(parent_scope, errors);
+            rhs.push_back(expr->get_type(parent_scope));
         }
 
-        for (auto i = 0u; i < exprs.size(); ++i) {
-            if (i < vars.size()) {
-                auto r = is_assignable(vars[i]->get_type(parent_scope), exprs[i]->get_type(parent_scope));
-                if (!r.yes) {
-                    errors.emplace_back(to_string(r), location);
-                }
-            } else {
-                errors.emplace_back(CompileError::Severity::WARNING, "Too many expressions on right side of assignment", location);
-                break;
-            }
+        const auto r = is_assignable(lhs, rhs, false);
+
+        if (!r.yes) {
+            errors.emplace_back(to_string(r), location);
+        } else if (!r.messages.empty()) {
+            errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
         }
     }
 
