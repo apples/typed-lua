@@ -185,6 +185,27 @@ public:
     }
 };
 
+class NTypeSum : public NType {
+public:
+    NTypeSum() = default;
+    NTypeSum(std::unique_ptr<NType> l, std::unique_ptr<NType> r): lhs(std::move(l)), rhs(std::move(r)) {}
+    std::unique_ptr<NType> lhs;
+    std::unique_ptr<NType> rhs;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        lhs->check(parent_scope, errors);
+        rhs->check(parent_scope, errors);
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << "(" << *lhs << "|" << *rhs << ")";
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return lhs->get_type(scope) | rhs->get_type(scope);
+    }
+};
+
 class NNameDecl : public Node {
 public:
     NNameDecl() = default;

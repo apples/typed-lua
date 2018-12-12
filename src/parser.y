@@ -51,8 +51,9 @@
         std::cerr << "  Line: " << loc->first_line << std::endl;
     }
 
-    static std::unique_ptr<NExpr> ptr(NExpr* expr) {
-        return std::unique_ptr<NExpr>(expr);
+    template <typename T>
+    std::unique_ptr<T> ptr(T* expr) {
+        return std::unique_ptr<T>(expr);
     }
 
     #define BINOP(OBJ, NAME, LEFT, RIGHT, LOC) \
@@ -119,7 +120,7 @@
 %type <fields> fieldlist
 %type <params> funcparams
 %type <namedecls> namelist
-%type <type> type funcret typetuple rettype
+%type <type> unittype type funcret typetuple rettype functype idtype
 %type <typefuncparams> typefuncparams
 
 %start chunk
@@ -231,21 +232,35 @@ namelist: TIDENTIFIER {
         }
         ;
 
-type: TIDENTIFIER {
-        $$ = new NTypeName(std::move(*$1));
-        $$->location = @$;
-        delete $1;
-    }
-    | '(' ')' ':' rettype[ret] {
-        $$ = new NTypeFunction({}, std::unique_ptr<NType>($ret));
-        $$->location = @$;
-    }
-    | '(' typefuncparams ')' ':' rettype[ret] {
-        $$ = new NTypeFunction(std::move(*$typefuncparams), std::unique_ptr<NType>($ret));
-        $$->location = @$;
-        delete $typefuncparams;
-    }
+type: unittype { $$ = $1; }
+    | functype { $$ = $1; }
     ;
+
+idtype: TIDENTIFIER {
+          $$ = new NTypeName(std::move(*$1));
+          $$->location = @$;
+          delete $1;
+      }
+      ;
+
+unittype: idtype { $$ = $1; }
+        | unittype[lhs] '|' unittype[rhs] {
+            $$ = new NTypeSum(ptr($lhs), ptr($rhs));
+            $$->location = @$;
+        }
+        | '(' type ')' { $$ = $2; $$->location = @$; }
+        ;
+
+functype: '(' ')' ':' rettype[ret] {
+            $$ = new NTypeFunction({}, std::unique_ptr<NType>($ret));
+            $$->location = @$;
+        }
+        | '(' typefuncparams ')' ':' rettype[ret] {
+            $$ = new NTypeFunction(std::move(*$typefuncparams), ptr($ret));
+            $$->location = @$;
+            delete $typefuncparams;
+        }
+        ;
 
 rettype: type { $$ = $1; }
        | typetuple { $$ = $1; }
