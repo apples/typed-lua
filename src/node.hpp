@@ -1070,15 +1070,36 @@ public:
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NType> ret;
     std::unique_ptr<NBlock> block;
+    mutable std::optional<Type> deducedret;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         params->check(parent_scope, errors);
         if (ret) ret->check(parent_scope, errors);
 
-        auto this_scope = Scope(&parent_scope);
-        params->add_to_scope(this_scope);
+        auto paramtypes = params->get_types(parent_scope);
 
-        block->check(this_scope, errors);
+        if (ret) {
+            auto rettype = ret->get_type(parent_scope);
+            auto functype = Type::make_function(std::move(paramtypes), rettype);
+
+            auto this_scope = Scope(&parent_scope);
+            params->add_to_scope(this_scope);
+            this_scope.set_return_type(std::move(rettype));
+
+            block->check(this_scope, errors);
+        } else {
+            auto functype = Type::make_function(paramtypes, Type::make_any());
+
+            auto this_scope = Scope(&parent_scope);
+            params->add_to_scope(this_scope);
+            this_scope.deduce_return_type();
+
+            block->check(this_scope, errors);
+
+            if (auto newret = this_scope.get_return_type()) {
+                deducedret = std::move(*newret);
+            }
+        }
     }
 
     virtual void dump(std::ostream& out) const override {
@@ -1094,7 +1115,12 @@ public:
         for (const auto& name : params->names) {
             paramtypes.push_back(name.get_type(scope));
         }
-        auto rettype = ret ? ret->get_type(scope) : Type::make_any();
+
+        auto rettype =
+            ret ? ret->get_type(scope) :
+            deducedret ? *deducedret :
+            Type::make_any();
+
         return Type::make_function(std::move(paramtypes), std::move(rettype));
     }
 };
