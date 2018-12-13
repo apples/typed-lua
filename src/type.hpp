@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 #include <sstream>
+#include <algorithm>
 
 namespace typedlua {
 
@@ -108,6 +109,14 @@ public:
         return type;
     }
 
+    static Type make_reduced_tuple(std::vector<Type> types) {
+        if (types.size() == 1) {
+            return std::move(types[0]);
+        } else {
+            return make_tuple(std::move(types), false);
+        }
+    }
+
     const Tag& get_tag() const { return tag; }
 
     const LuaType& get_luatype() const { return luatype; }
@@ -163,7 +172,31 @@ private:
     };
 };
 
+inline std::string to_string(const Type& type);
+
+struct AssignResult {
+    bool yes = false;
+    std::vector<std::string> messages;
+
+    AssignResult() = default;
+    AssignResult(bool b) : yes(b) {}
+    AssignResult(bool b, std::string m) : yes(b), messages{std::move(m)} {}
+};
+
+inline AssignResult is_assignable(const LuaType& llua, const LuaType& rlua);
+inline AssignResult is_assignable(const FunctionType& lfunc, const FunctionType& rfunc);
+inline AssignResult is_assignable(const TupleType& ltuple, const TupleType& rtuple);
+inline AssignResult is_assignable(const Type& lhs, const LuaType& rlua);
+inline AssignResult is_assignable(const Type& lhs, const FunctionType& rfunc);
+inline AssignResult is_assignable(const Type& lhs, const SumType& rsum);
+inline AssignResult is_assignable(const Type& lhs, const TupleType& rtuple);
+inline AssignResult is_assignable(const Type& lhs, const Type& rhs);
+
 inline Type operator|(const Type& lhs, const Type& rhs) {
+    if (is_assignable(lhs, rhs).yes) {
+        return lhs;
+    }
+
     auto rv = Type{};
     rv.tag = Type::Tag::SUM;
     new (&rv.sum) SumType{};
@@ -182,15 +215,17 @@ inline Type operator|(const Type& lhs, const Type& rhs) {
 
     if (rhs.get_tag() == Type::Tag::SUM) {
         const auto& rhs_types = rhs.get_sum().types;
-        rv.sum.types.insert(rv.sum.types.end(), rhs_types.begin(), rhs_types.end());
+        for (const auto& type : rhs_types) {
+            if (!is_assignable(rv, type).yes) {
+                rv.sum.types.push_back(type);
+            }
+        }
     } else {
         rv.sum.types.push_back(rhs);
     }
 
     return rv;
 }
-
-inline std::string to_string(const Type& type);
 
 inline std::string to_string(const LuaType& luatype) {
     switch (luatype) {
@@ -264,15 +299,6 @@ inline std::string to_string(const Type& type) {
     }
 }
 
-struct AssignResult {
-    bool yes = false;
-    std::vector<std::string> messages;
-
-    AssignResult() = default;
-    AssignResult(bool b) : yes(b) {}
-    AssignResult(bool b, std::string m) : yes(b), messages{std::move(m)} {}
-};
-
 inline std::string to_string(const AssignResult& ar) {
     std::string r;
     for (const auto& msg : ar.messages) {
@@ -285,14 +311,6 @@ template <typename T, typename U>
 std::string cannot_assign(const T& lhs, const U& rhs) {
     return "Cannot assign `" + to_string(rhs) + "` to `" + to_string(lhs) + "`";
 }
-
-inline AssignResult is_assignable(const LuaType& llua, const LuaType& rlua);
-inline AssignResult is_assignable(const FunctionType& lfunc, const FunctionType& rfunc);
-inline AssignResult is_assignable(const Type& lhs, const LuaType& rlua);
-inline AssignResult is_assignable(const Type& lhs, const FunctionType& rfunc);
-inline AssignResult is_assignable(const Type& lhs, const SumType& rsum);
-inline AssignResult is_assignable(const Type& lhs, const Type& rhs);
-inline AssignResult is_assignable(const std::vector<Type>& lhs, const std::vector<Type>& rhs, bool variadic);
 
 template <typename RHS>
 AssignResult is_assignable(const SumType& lsum, const RHS& rhs) {
@@ -349,6 +367,44 @@ inline AssignResult is_assignable(const FunctionType& lfunc, const FunctionType&
     return r;
 }
 
+inline AssignResult is_assignable(const TupleType& ltuple, const TupleType& rtuple) {
+    const auto& lhs = ltuple.types;
+    const auto& rhs = rtuple.types;
+
+    if (!rhs.empty() && rhs.back().get_tag() == Type::Tag::TUPLE) {
+        const auto& tup = rhs.back().get_tuple();
+        auto newrhs = std::vector<Type>(rhs.begin(), rhs.end() - 1);
+        newrhs.insert(newrhs.end(), tup.types.begin(), tup.types.end());
+        return is_assignable(ltuple, TupleType{newrhs, tup.is_variadic});
+    }
+
+    const auto edge = std::min(lhs.size(), rhs.size());
+
+    for (auto i = 0u; i < edge; ++i) {
+        auto r = is_assignable(lhs[i], rhs[i]);
+        if (!r.yes) {
+            r.messages.push_back("At item " + std::to_string(i + 1));
+            return r;
+        }
+    }
+
+    if (lhs.size() > rhs.size() && !rtuple.is_variadic) {
+        for (auto i = edge; i < lhs.size(); ++i) {
+            auto r = is_assignable(lhs[i], LuaType::NIL);
+            if (!r.yes) {
+                r.messages.push_back("Not enough values on right-hand side");
+                return r;
+            }
+        }
+    }
+
+    if (lhs.size() < rhs.size() && !ltuple.is_variadic) {
+        return {false, "Too many values on right-hand size"};
+    }
+
+    return true;
+}
+
 inline AssignResult is_assignable(const Type& lhs, const FunctionType& rfunc) {
     switch (lhs.get_tag()) {
         case Type::Tag::ANY: return true;
@@ -369,51 +425,25 @@ inline AssignResult is_assignable(const Type& lhs, const SumType& rsum) {
     return true;
 }
 
+inline AssignResult is_assignable(const Type& lhs, const TupleType& rtuple) {
+    switch (lhs.get_tag()) {
+        case Type::Tag::ANY: return true;
+        case Type::Tag::TUPLE: return is_assignable(lhs.get_tuple(), rtuple);
+        case Type::Tag::SUM: return is_assignable(lhs.get_sum(), rtuple);
+        default: return {false, cannot_assign(lhs, rtuple)};
+    }
+}
+
 inline AssignResult is_assignable(const Type& lhs, const Type& rhs) {
     switch (rhs.get_tag()) {
         case Type::Tag::VOID: return {false, "Cannot assign `void` to `" + to_string(lhs) + "`"};
         case Type::Tag::ANY: return true;
         case Type::Tag::LUATYPE: return is_assignable(lhs, rhs.get_luatype());
         case Type::Tag::FUNCTION: return is_assignable(lhs, rhs.get_function());
-        case Type::Tag::TUPLE: throw std::logic_error("Cannot assign tuple to value");
+        case Type::Tag::TUPLE: return is_assignable(lhs, rhs.get_tuple());
         case Type::Tag::SUM: return is_assignable(lhs, rhs.get_sum());
         default: throw std::logic_error("Tag not implemented for assignment");
     }
-}
-
-inline AssignResult is_assignable(const std::vector<Type>& lhs, const std::vector<Type>& rhs, bool variadic) {
-    if (!rhs.empty() && rhs.back().get_tag() == Type::Tag::TUPLE) {
-        const auto& tup = rhs.back().get_tuple();
-        auto newrhs = std::vector<Type>(rhs.begin(), rhs.end() - 1);
-        newrhs.insert(newrhs.end(), tup.types.begin(), tup.types.end());
-        return is_assignable(lhs, newrhs, tup.is_variadic);
-    }
-
-    const auto edge = std::min(lhs.size(), rhs.size());
-
-    for (auto i = 0u; i < edge; ++i) {
-        auto r = is_assignable(lhs[i], rhs[i]);
-        if (!r.yes) {
-            r.messages.push_back("At right-hand side item " + std::to_string(i + 1));
-            return r;
-        }
-    }
-
-    if (rhs.size() > lhs.size() || (rhs.size() == lhs.size() && variadic)) {
-        return {true, "Too many expressions on right-hand side"};
-    }
-
-    if (lhs.size() > rhs.size() && !variadic) {
-        for (auto i = rhs.size(); i < lhs.size(); ++i) {
-            auto r = is_assignable(lhs[i], Type::make_luatype(LuaType::NIL));
-            if (!r.yes) {
-                r.messages.push_back("At left-hand side item " + std::to_string(i + 1));
-                return r;
-            }
-        }
-    }
-
-    return true;
 }
 
 } // namespace typedlua

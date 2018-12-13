@@ -120,7 +120,7 @@
 %type <fields> fieldlist
 %type <params> funcparams
 %type <namedecls> namelist
-%type <type> unittype type funcret typetuple rettype functype idtype
+%type <type> unittype type funcret typetuple rettype functype idtype retunittype
 %type <typefuncparams> typefuncparams
 
 %start chunk
@@ -244,11 +244,11 @@ idtype: TIDENTIFIER {
       ;
 
 unittype: idtype { $$ = $1; }
+        | '(' type ')' { $$ = $2; $$->location = @$; }
         | unittype[lhs] '|' unittype[rhs] {
             $$ = new NTypeSum(ptr($lhs), ptr($rhs));
             $$->location = @$;
         }
-        | '(' type ')' { $$ = $2; $$->location = @$; }
         ;
 
 functype: '(' ')' ':' rettype[ret] {
@@ -262,8 +262,17 @@ functype: '(' ')' ':' rettype[ret] {
         }
         ;
 
-rettype: type { $$ = $1; }
-       | typetuple { $$ = $1; }
+retunittype: idtype { $$ = $1; }
+           | typetuple { $$ = $1; }
+           | '(' type ')' { $$ = $2; $$->location = @$; }
+           | retunittype[lhs] '|' retunittype[rhs] {
+               $$ = new NTypeSum(ptr($lhs), ptr($rhs));
+               $$->location = @$;
+           }
+           ;
+   
+rettype: retunittype { $$ = $1; }
+       | functype { $$ = $1; }
        ;
 
 typetuple: '[' typefuncparams ']' {

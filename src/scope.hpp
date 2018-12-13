@@ -25,7 +25,7 @@ public:
     }
 
     void add_name(const std::string& name, Type type) {
-        names[name] = std::move(type);
+        names.insert_or_assign(name, std::move(type));
     }
 
     const Type* get_dots_type() const {
@@ -62,29 +62,70 @@ public:
         types[name] = std::move(type);
     }
 
-    void enable_lua_types() {
-        add_type("nil", Type(LuaType::NIL));
-        add_type("number", Type(LuaType::NUMBER));
-        add_type("string", Type(LuaType::STRING));
-        add_type("boolean", Type(LuaType::BOOLEAN));
-        add_type("thread", Type(LuaType::THREAD));
+    void enable_basic_types() {
+        add_type("void", Type());
+        add_type("any", Type::make_any());
+        add_type("nil", Type::make_luatype(LuaType::NIL));
+        add_type("number", Type::make_luatype(LuaType::NUMBER));
+        add_type("string", Type::make_luatype(LuaType::STRING));
+        add_type("boolean", Type::make_luatype(LuaType::BOOLEAN));
+        add_type("thread", Type::make_luatype(LuaType::THREAD));
     }
 
     const Type* get_fixed_return_type() const {
-        if (return_type_fixed) {
-            return &return_type;
-        } else {
-            return nullptr;
+        switch (return_type_state) {
+            case ReturnState::INHERIT:
+                return parent->get_fixed_return_type();
+            case ReturnState::FIXED:
+                if (return_type) {
+                    return &*return_type;
+                } else {
+                    return nullptr;
+                }
+            case ReturnState::DEDUCE:
+                return nullptr;
+            default:
+                return nullptr;
+        }
+    }
+
+    Type* get_return_type() {
+        switch (return_type_state) {
+            case ReturnState::INHERIT:
+                return parent->get_return_type();
+            case ReturnState::DEDUCE:
+                return return_type ? &*return_type : nullptr;
+            case ReturnState::FIXED:
+                return &*return_type;
+            default:
+                return nullptr;
         }
     }
 
     void add_return_type(const Type& type) {
-        set_return_type(type);
+        switch (return_type_state) {
+            case ReturnState::INHERIT:
+                parent->add_return_type(type);
+                break;
+            case ReturnState::DEDUCE:
+                if (return_type) {
+                    return_type = *return_type | type;
+                } else {
+                    return_type = type;
+                }
+                break;
+            case ReturnState::FIXED:
+                throw std::logic_error("Cannot change fixed return type");
+        }
     }
 
     void set_return_type(const Type& type) {
         return_type = type;
-        return_type_fixed = true;
+        return_type_state = ReturnState::FIXED;
+    }
+
+    void deduce_return_type() {
+        return_type_state = ReturnState::DEDUCE;
     }
 
 private:
@@ -94,13 +135,19 @@ private:
         OWN
     };
 
+    enum class ReturnState {
+        INHERIT,
+        FIXED,
+        DEDUCE
+    };
+
     Scope* parent = nullptr;
     std::unordered_map<std::string, Type> names;
     std::optional<Type> dots_type;
     DotsState dots_state = DotsState::INHERIT;
     std::unordered_map<std::string, Type> types;
-    Type return_type;
-    bool return_type_fixed;
+    std::optional<Type> return_type;
+    ReturnState return_type_state = ReturnState::INHERIT;
 };
 
 } // namespace typedlua

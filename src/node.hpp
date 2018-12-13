@@ -397,7 +397,9 @@ public:
             rhs.push_back(expr->get_type(parent_scope));
         }
 
-        const auto r = is_assignable(lhs, rhs, false);
+        const auto lhstype = Type::make_reduced_tuple(std::move(lhs));
+        const auto rhstype = Type::make_reduced_tuple(std::move(rhs));
+        const auto r = is_assignable(lhstype, rhstype);
 
         if (!r.yes) {
             errors.emplace_back(to_string(r), location);
@@ -812,14 +814,32 @@ public:
         if (ret) ret->check(parent_scope, errors);
 
         auto paramtypes = params->get_types(parent_scope);
-        auto rettype = ret ? ret->get_type(parent_scope) : Type::make_any();
-        auto functype = Type::make_function(std::move(paramtypes), std::move(rettype));
-        parent_scope.add_name(name, std::move(functype));
 
-        auto this_scope = Scope(&parent_scope);
-        params->add_to_scope(this_scope);
+        if (ret) {
+            auto rettype = ret->get_type(parent_scope);
+            auto functype = Type::make_function(std::move(paramtypes), rettype);
+            parent_scope.add_name(name, std::move(functype));
 
-        block->check(this_scope, errors);
+            auto this_scope = Scope(&parent_scope);
+            params->add_to_scope(this_scope);
+            this_scope.set_return_type(std::move(rettype));
+
+            block->check(this_scope, errors);
+        } else {
+            auto functype = Type::make_function(paramtypes, Type::make_any());
+            parent_scope.add_name(name, std::move(functype));
+
+            auto this_scope = Scope(&parent_scope);
+            params->add_to_scope(this_scope);
+            this_scope.deduce_return_type();
+
+            block->check(this_scope, errors);
+
+            if (auto newret = this_scope.get_return_type()) {
+                auto newtype = Type::make_function(std::move(paramtypes), std::move(*newret));
+                parent_scope.add_name(name, std::move(newtype));
+            }
+        }
     }
 
     virtual void dump(std::ostream& out) const override {
@@ -838,8 +858,24 @@ public:
     std::vector<std::unique_ptr<NExpr>> exprs;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        auto exprtypes = std::vector<Type>{};
+
+        exprtypes.reserve(exprs.size());
+
         for (const auto& expr : exprs) {
             expr->check(parent_scope, errors);
+            exprtypes.push_back(expr->get_type(parent_scope));
+        }
+
+        auto type = Type::make_reduced_tuple(std::move(exprtypes));
+
+        if (auto rettype = parent_scope.get_fixed_return_type()) {
+            auto r = is_assignable(*rettype, type);
+            if (!r.yes) {
+                errors.emplace_back(to_string(r), location);
+            }
+        } else {
+            parent_scope.add_return_type(type);
         }
     }
 

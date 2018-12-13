@@ -5,7 +5,7 @@
 
 int main(int argc, char **argv) {
     auto scope = typedlua::Scope();
-    scope.enable_lua_types();
+    scope.enable_basic_types();
     auto tlc = typedlua::Compiler(scope);
     
     std::stringstream ss;
