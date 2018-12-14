@@ -11,6 +11,7 @@ namespace typedlua {
 class Scope {
 public:
     Scope() = default;
+    Scope(DeferredTypeCollection* dt) : deferred_types(dt) {}
     Scope(Scope* parent) : parent(parent) {}
 
     const Type* get_type_of(const std::string& name) const {
@@ -128,6 +129,16 @@ public:
         return_type_state = ReturnState::DEDUCE;
     }
 
+    DeferredTypeCollection& get_deferred_types() {
+        if (deferred_types) {
+            return *deferred_types;
+        } else if (parent) {
+            return parent->get_deferred_types();
+        } else {
+            throw std::logic_error("No deferred type collection in tree");
+        }
+    }
+
 private:
     enum class DotsState {
         INHERIT,
@@ -148,6 +159,7 @@ private:
     std::unordered_map<std::string, Type> types;
     std::optional<Type> return_type;
     ReturnState return_type_state = ReturnState::INHERIT;
+    DeferredTypeCollection* deferred_types = nullptr;
 };
 
 } // namespace typedlua

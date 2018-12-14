@@ -206,6 +206,32 @@ public:
     }
 };
 
+class NInterface : public Node {
+public:
+    NInterface() = default;
+    NInterface(std::string n, std::unique_ptr<NType> t) : name(std::move(n)), type(std::move(t)) {}
+    std::string name;
+    std::unique_ptr<NType> type;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        if (auto oldtype = parent_scope.get_type(name)) {
+            errors.emplace_back(CompileError::Severity::WARNING, "Interface `" + name + "` shadows existing type", location);
+        }
+
+        auto& deferred = parent_scope.get_deferred_types();
+        const auto deferred_id = deferred.reserve();
+
+        parent_scope.add_type(name, Type::make_deferred(deferred, deferred_id));
+        type->check(parent_scope, errors);
+
+        deferred.set(deferred_id, type->get_type(parent_scope));
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << "--[[interface " << name << ":" << *type << "]]";
+    }
+};
+
 class NNameDecl : public Node {
 public:
     NNameDecl() = default;

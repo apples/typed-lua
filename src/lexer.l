@@ -76,6 +76,7 @@
 "until"                             return TUNTIL;
 "while"                             return TWHILE;
 "global"                            return TGLOBAL;
+"interface"                         return TINTERFACE;
 [a-zA-Z_][a-zA-Z0-9_]*              SAVE_TOKEN; return TIDENTIFIER;
 [0-9]+(\.[0-9]+([eE]-?[0-9]+)?)?    SAVE_TOKEN; return TNUMBER;
 \"(\\.|[^\\"])*\"|'(\\.|[^\\'])*'   SAVE_TOKEN; return TSTRING;

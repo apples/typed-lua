@@ -87,7 +87,7 @@
 %token TLOCAL TNIL TNOT TOR TREPEAT TRETURN
 %token TTHEN TTRUE TUNTIL TWHILE
 
-%token TGLOBAL
+%token TGLOBAL TINTERFACE
 
 %token <string> TIDENTIFIER TNUMBER TSTRING
 
@@ -107,7 +107,7 @@
 %left '('
 
 %type <node> stat assign label goto while repeat if fornumeric forgeneric
-%type <node> function localfunc retstat localvar globalvar
+%type <node> function localfunc retstat localvar globalvar interface
 %type <block> block statseq
 %type <expr> expr var functioncall prefixexpr funcvar functiondef
 %type <expr> tableconstructor binopcall unaryopcall
@@ -202,6 +202,7 @@ stat: ';' { $$ = new NEmpty(); $$->location = @$; }
     | localfunc { $$ = $1; }
     | localvar { $$ = $1; }
     | globalvar { $$ = $1; }
+    | interface { $$ = $1; }
     ;
 
 namelist: TIDENTIFIER {
@@ -368,6 +369,13 @@ globalvar: TGLOBAL namelist {
             delete $explist;
       }
       ;
+
+interface: TINTERFACE TIDENTIFIER[name] ':' type {
+             $$ = new NInterface(std::move(*$name), ptr($type));
+             $$->location = @$;
+             delete $name;
+         }
+         ;
 
 localvar: TLOCAL namelist {
             $$ = new NLocalVar(

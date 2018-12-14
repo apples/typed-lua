@@ -4,7 +4,8 @@
 #include "typedlua_compiler.hpp"
 
 int main(int argc, char **argv) {
-    auto scope = typedlua::Scope();
+    auto deferred_types = typedlua::DeferredTypeCollection{};
+    auto scope = typedlua::Scope(&deferred_types);
     scope.enable_basic_types();
     auto tlc = typedlua::Compiler(scope);
     
