@@ -777,14 +777,43 @@ public:
     std::unique_ptr<NBlock> block;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        expr->check(parent_scope, errors);
         params->check(parent_scope, errors);
         if (ret) ret->check(parent_scope, errors);
 
-        auto this_scope = Scope(&parent_scope);
-        params->add_to_scope(this_scope);
+        auto self_type = expr->get_type(parent_scope);
+        auto return_type = Type::make_any();
 
-        block->check(this_scope, errors);
+        if (ret) {
+            return_type = ret->get_type(parent_scope);
+
+            auto this_scope = Scope(&parent_scope);
+            params->add_to_scope(this_scope);
+            this_scope.add_name("self", std::move(self_type));
+            this_scope.set_return_type(return_type);
+
+            block->check(this_scope, errors);
+        } else {
+            auto this_scope = Scope(&parent_scope);
+            params->add_to_scope(this_scope);
+            this_scope.add_name("self", std::move(self_type));
+            this_scope.deduce_return_type();
+
+            block->check(this_scope, errors);
+
+            if (auto newret = this_scope.get_return_type()) {
+                return_type = std::move(*newret);
+            }
+        }
+
+        const auto functype = Type::make_function(params->get_types(parent_scope), std::move(return_type));
+
+        const auto r = is_assignable(Type::make_any(), functype);
+
+        if (!r.yes) {
+            errors.emplace_back(to_string(r), location);
+        } else if (!r.messages.empty()) {
+            errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
+        }
     }
 
     virtual void dump(std::ostream& out) const override {
@@ -1076,11 +1105,8 @@ public:
         params->check(parent_scope, errors);
         if (ret) ret->check(parent_scope, errors);
 
-        auto paramtypes = params->get_types(parent_scope);
-
         if (ret) {
             auto rettype = ret->get_type(parent_scope);
-            auto functype = Type::make_function(std::move(paramtypes), rettype);
 
             auto this_scope = Scope(&parent_scope);
             params->add_to_scope(this_scope);
@@ -1088,8 +1114,6 @@ public:
 
             block->check(this_scope, errors);
         } else {
-            auto functype = Type::make_function(paramtypes, Type::make_any());
-
             auto this_scope = Scope(&parent_scope);
             params->add_to_scope(this_scope);
             this_scope.deduce_return_type();

@@ -30,3 +30,8 @@ end
 func = func2
 
 func2 = func
+
+local obj
+function obj:method(x)
+    return self + x
+end
