@@ -206,6 +206,87 @@ public:
     }
 };
 
+class NIndex : public Node {
+public:
+    NIndex() = default;
+    NIndex(std::unique_ptr<NType> k, std::unique_ptr<NType> v) : key(std::move(k)), val(std::move(v)) {}
+    std::unique_ptr<NType> key;
+    std::unique_ptr<NType> val;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        key->check(parent_scope, errors);
+        val->check(parent_scope, errors);
+
+        auto ktype = key->get_type(parent_scope);
+
+        if (is_assignable(ktype, LuaType::NIL).yes) {
+            errors.emplace_back("Key type must not be compatible with `nil`", key->location);
+        }
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << "[" << *key << "]:" << *val;
+    }
+
+    KeyValPair get_kvp(const Scope& scope) const {
+        return {key->get_type(scope), val->get_type(scope)};
+    }
+};
+
+class NIndexList : public Node {
+public:
+    NIndexList() = default;
+    std::vector<std::unique_ptr<NIndex>> indexes;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        for (const auto& index : indexes) {
+            index->check(parent_scope, errors);
+        }
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        bool first = true;
+        for (const auto& index : indexes) {
+            if (!first) {
+                out << ";";
+            }
+            out << *index;
+            first = false;
+        }
+    }
+
+    std::vector<KeyValPair> get_types(const Scope& scope) const {
+        std::vector<KeyValPair> rv;
+        for (const auto& index : indexes) {
+            rv.push_back(index->get_kvp(scope));
+        }
+        return rv;
+    }
+};
+
+class NTypeTable : public NType {
+public:
+    NTypeTable() = default;
+    NTypeTable(std::unique_ptr<NIndexList> i) : indexlist(std::move(i)) {}
+    std::unique_ptr<NIndexList> indexlist;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        if (indexlist) indexlist->check(parent_scope, errors);
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << "{";
+        if (indexlist) out << *indexlist;
+        out << "}";
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        std::vector<KeyValPair> indexes;
+        if (indexlist) indexes = indexlist->get_types(scope);
+        return Type::make_table(std::move(indexes));
+    }
+};
+
 class NInterface : public Node {
 public:
     NInterface() = default;

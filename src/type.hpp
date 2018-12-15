@@ -19,6 +19,7 @@ enum class LuaType {
 
 class Type;
 class DeferredTypeCollection;
+struct KeyValPair;
 
 struct FunctionType {
     std::vector<Type> params;
@@ -43,6 +44,10 @@ struct SumType {
     std::vector<Type> types;
 };
 
+struct TableType {
+    std::vector<KeyValPair> indexes;
+};
+
 struct DeferredType {
     const DeferredTypeCollection* collection;
     int id;
@@ -57,6 +62,7 @@ public:
         FUNCTION,
         TUPLE,
         SUM,
+        TABLE,
         DEFERRED
     };
 
@@ -124,6 +130,13 @@ public:
         }
     }
 
+    static Type make_table(std::vector<KeyValPair> indexes) {
+        auto type = Type{};
+        type.tag = Tag::TABLE;
+        new (&type.table) TableType{std::move(indexes)};
+        return type;
+    }
+
     static Type make_deferred(const DeferredTypeCollection& collection, int id) {
         auto type = Type{};
         type.tag = Tag::DEFERRED;
@@ -141,6 +154,8 @@ public:
 
     const SumType& get_sum() const { return sum; }
 
+    const TableType& get_table() const { return table; }
+
     const DeferredType& get_deferred() const { return deferred; }
 
     friend Type operator|(const Type& lhs, const Type& rhs);
@@ -154,6 +169,7 @@ private:
             case Tag::FUNCTION: std::destroy_at(&function); break;
             case Tag::TUPLE: std::destroy_at(&tuple); break;
             case Tag::SUM: std::destroy_at(&sum); break;
+            case Tag::TABLE: std::destroy_at(&table); break;
             case Tag::DEFERRED: std::destroy_at(&deferred); break;
             default: throw std::logic_error("Type tag not implemented");
         }
@@ -167,6 +183,7 @@ private:
             case Tag::FUNCTION: new (&function) FunctionType(other.function); break;
             case Tag::TUPLE: new (&tuple) TupleType(other.tuple); break;
             case Tag::SUM: new (&sum) SumType(other.sum); break;
+            case Tag::TABLE: new (&table) TableType(other.table); break;
             case Tag::DEFERRED: new (&deferred) DeferredType(other.deferred); break;
             default: throw std::logic_error("Type tag not implemented");
         }
@@ -177,6 +194,7 @@ private:
             case Tag::FUNCTION: new (&function) FunctionType(std::move(other.function)); break;
             case Tag::TUPLE: new (&tuple) TupleType(std::move(other.tuple)); break;
             case Tag::SUM: new (&sum) SumType(std::move(other.sum)); break;
+            case Tag::TABLE: new (&table) TableType(std::move(other.table)); break;
             case Tag::DEFERRED: new (&deferred) DeferredType(std::move(other.deferred)); break;
             default: assign_from(other);
         }
@@ -188,6 +206,7 @@ private:
         FunctionType function;
         TupleType tuple;
         SumType sum;
+        TableType table;
         DeferredType deferred;
     };
 };
@@ -213,6 +232,11 @@ private:
     std::vector<Type> types;
 };
 
+struct KeyValPair {
+    Type key;
+    Type val;
+};
+
 struct AssignResult {
     bool yes = false;
     std::vector<std::string> messages;
@@ -230,10 +254,13 @@ AssignResult is_assignable(const DeferredType& ldefer, const RHS& rhs);
 inline AssignResult is_assignable(const LuaType& llua, const LuaType& rlua);
 inline AssignResult is_assignable(const FunctionType& lfunc, const FunctionType& rfunc);
 inline AssignResult is_assignable(const TupleType& ltuple, const TupleType& rtuple);
+inline AssignResult is_assignable(const TableType& ltable, const TableType& rtable);
+inline AssignResult is_assignable(const DeferredType& ldefer, const DeferredType& rdefer);
 inline AssignResult is_assignable(const Type& lhs, const LuaType& rlua);
 inline AssignResult is_assignable(const Type& lhs, const FunctionType& rfunc);
 inline AssignResult is_assignable(const Type& lhs, const SumType& rsum);
 inline AssignResult is_assignable(const Type& lhs, const TupleType& rtuple);
+inline AssignResult is_assignable(const Type& lhs, const TableType& rtable);
 inline AssignResult is_assignable(const Type& lhs, const DeferredType& rdefer);
 inline AssignResult is_assignable(const Type& lhs, const Type& rhs);
 
@@ -332,6 +359,24 @@ inline std::string to_string(const SumType& sum) {
     return oss.str();
 }
 
+inline std::string to_string(const KeyValPair& kvp) {
+    return "[" + to_string(kvp.key) + "]:" + to_string(kvp.val);
+}
+
+inline std::string to_string(const TableType& table) {
+    std::ostringstream oss;
+    oss << "{";
+    bool first = true;
+    for (const auto& index : table.indexes) {
+        if (!first) {
+            oss << ";";
+        }
+        oss << to_string(index);
+        first = false;
+    }
+    return oss.str();
+}
+
 inline std::string to_string(const DeferredType& defer) {
     std::ostringstream oss;
     oss << "<deferred #" << defer.id << ">";
@@ -346,6 +391,7 @@ inline std::string to_string(const Type& type) {
         case Type::Tag::FUNCTION: return to_string(type.get_function());
         case Type::Tag::TUPLE: return to_string(type.get_tuple());
         case Type::Tag::SUM: return to_string(type.get_sum());
+        case Type::Tag::TABLE: return to_string(type.get_table());
         case Type::Tag::DEFERRED: return to_string(type.get_deferred());
         default: throw std::logic_error("Tag not implemented for to_string");
     }
@@ -463,6 +509,30 @@ inline AssignResult is_assignable(const TupleType& ltuple, const TupleType& rtup
     return true;
 }
 
+inline AssignResult is_assignable(const TableType& ltable, const TableType& rtable) {
+    for (const auto& lindex : ltable.indexes) {
+        bool found = false;
+        for (const auto& rindex : rtable.indexes) {
+            if (is_assignable(rindex.key, lindex.key).yes) {
+                auto r = is_assignable(lindex.val, rindex.val);
+                if (!r.yes) {
+                    r.messages.push_back("When checking index `" + to_string(lindex) + "` against `" + to_string(rindex) + "`");
+                    return r;
+                }
+                found = true;
+            }
+        }
+        if (!found) {
+            auto r = is_assignable(lindex.val, LuaType::NIL);
+            if (!r.yes) {
+                r.messages.push_back("At table index `" + to_string(lindex) + "`");
+                return r;
+            }
+        }
+    }
+    return true;
+}
+
 inline AssignResult is_assignable(const DeferredType& ldefer, const DeferredType& rdefer) {
     if (ldefer.collection == rdefer.collection && ldefer.id == rdefer.id) {
         return true;
@@ -501,6 +571,16 @@ inline AssignResult is_assignable(const Type& lhs, const TupleType& rtuple) {
     }
 }
 
+inline AssignResult is_assignable(const Type& lhs, const TableType& rtable) {
+    switch (lhs.get_tag()) {
+        case Type::Tag::ANY: return true;
+        case Type::Tag::TABLE: return is_assignable(lhs.get_table(), rtable);
+        case Type::Tag::SUM: return is_assignable(lhs.get_sum(), rtable);
+        case Type::Tag::DEFERRED: return is_assignable(lhs.get_deferred(), rtable);
+        default: return {false, cannot_assign(lhs, rtable)};
+    }
+}
+
 inline AssignResult is_assignable(const Type& lhs, const DeferredType& rdefer) {
     switch (lhs.get_tag()) {
         case Type::Tag::ANY: return true;
@@ -518,6 +598,7 @@ inline AssignResult is_assignable(const Type& lhs, const Type& rhs) {
         case Type::Tag::FUNCTION: return is_assignable(lhs, rhs.get_function());
         case Type::Tag::TUPLE: return is_assignable(lhs, rhs.get_tuple());
         case Type::Tag::SUM: return is_assignable(lhs, rhs.get_sum());
+        case Type::Tag::TABLE: return is_assignable(lhs, rhs.get_table());
         case Type::Tag::DEFERRED: return is_assignable(lhs, rhs.get_deferred());
         default: throw std::logic_error("Tag not implemented for assignment");
     }

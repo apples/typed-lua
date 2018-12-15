@@ -38,6 +38,8 @@
     std::vector<typedlua::ast::NNameDecl>* namedecls;
     typedlua::ast::NType* type;
     std::vector<typedlua::ast::NTypeFunctionParam>* typefuncparams;
+    typedlua::ast::NIndex* index;
+    typedlua::ast::NIndexList* indexlist;
 }
 
 %code {
@@ -79,6 +81,8 @@
 %destructor { delete $$; } <namedecls>
 %destructor { delete $$; } <type>
 %destructor { delete $$; } <typefuncparams>
+%destructor { delete $$; } <index>
+%destructor { delete $$; } <indexlist>
 
 %token TCEQ TCNE TCLE TCGE TSHL TSHR
 %token TSLASH2 TDOT2 TDOT3 TCOLON2
@@ -120,8 +124,11 @@
 %type <fields> fieldlist
 %type <params> funcparams
 %type <namedecls> namelist
-%type <type> unittype type funcret typetuple rettype functype idtype retunittype
+%type <type> commonunittype unittype type typetuple idtype tabletype
+%type <type> funcret rettype functype retunittype
 %type <typefuncparams> typefuncparams
+%type <index> index
+%type <indexlist> indexes tableindexes
 
 %start chunk
 
@@ -242,10 +249,18 @@ idtype: TIDENTIFIER {
           $$->location = @$;
           delete $1;
       }
+      | TNIL {
+          $$ = new NTypeName("nil");
+          $$->location = @$;
+      }
       ;
 
-unittype: idtype { $$ = $1; }
-        | '(' type ')' { $$ = $2; $$->location = @$; }
+commonunittype: idtype { $$ = $1; }
+              | '(' type ')' { $$ = $2; $$->location = @$; }
+              | tabletype { $$ = $1; }
+              ;
+
+unittype: commonunittype { $$ = $1; }
         | unittype[lhs] '|' unittype[rhs] {
             $$ = new NTypeSum(ptr($lhs), ptr($rhs));
             $$->location = @$;
@@ -263,15 +278,14 @@ functype: '(' ')' ':' rettype[ret] {
         }
         ;
 
-retunittype: idtype { $$ = $1; }
+retunittype: commonunittype { $$ = $1; }
            | typetuple { $$ = $1; }
-           | '(' type ')' { $$ = $2; $$->location = @$; }
            | retunittype[lhs] '|' retunittype[rhs] {
                $$ = new NTypeSum(ptr($lhs), ptr($rhs));
                $$->location = @$;
            }
            ;
-   
+
 rettype: retunittype { $$ = $1; }
        | functype { $$ = $1; }
        ;
@@ -323,6 +337,38 @@ typefuncparams: ':' type {
                   delete $name;
               }
               ;
+
+tabletype: '{' tableindexes '}' {
+             $$ = new NTypeTable(ptr($tableindexes));
+             $$->location = @$;
+         }
+         ;
+
+tableindexes: %empty { $$ = nullptr; }
+            | indexes { $$ = $1; }
+            ;
+
+indexes: index {
+           $$ = new NIndexList();
+           $$->location = @$;
+           $$->indexes.push_back(ptr($index));
+       }
+       | indexes index {
+           $$ = $1;
+           $$->location = @$;
+           $$->indexes.push_back(ptr($index));
+       }
+       | indexes ';' {
+           $$ = $1;
+           $$->location = @$;
+       }
+       ;
+
+index: '[' type[key] ']' ':' type[val] {
+         $$ = new NIndex(ptr($key), ptr($val));
+         $$->location = @$;
+     }
+     ;
 
 binopcall: expr[l] TOR expr[r] { BINOP($$, "or", $l, $r, @$) }
          | expr[l] TAND expr[r] { BINOP($$, "and", $l, $r, @$) }
