@@ -1047,11 +1047,29 @@ public:
             }
             name.check(parent_scope, errors);
         }
+
+        std::vector<Type> exprtypes;
         for (const auto& expr : exprs) {
             expr->check(parent_scope, errors);
+            exprtypes.push_back(expr->get_type(parent_scope));
         }
-        for (const auto& name : names) {
-            parent_scope.add_name(name.name, name.get_type(parent_scope));
+
+        if (!exprtypes.empty() && exprtypes.back().get_tag() == Type::Tag::TUPLE) {
+            auto tupletype = std::move(exprtypes.back());
+            exprtypes.pop_back();
+            const auto& tuple = tupletype.get_tuple();
+            exprtypes.insert(exprtypes.end(), tuple.types.begin(), tuple.types.end());
+        }
+
+        for (auto i = 0u; i < names.size(); ++i) {
+            const auto& name = names[i];
+            if (name.type) {
+                parent_scope.add_name(name.name, name.get_type(parent_scope));
+            } else if (i < exprtypes.size()) {
+                parent_scope.add_name(name.name, std::move(exprtypes[i]));
+            } else {
+                parent_scope.add_name(name.name, Type::make_any());
+            }
         }
     }
 
@@ -1257,6 +1275,8 @@ public:
 };
 
 class NField : public Node {
+public:
+    virtual void add_to_table(const Scope& scope, std::vector<KeyValPair>& indexes) const = 0;
 };
 
 class NFieldExpr : public NField {
@@ -1271,6 +1291,17 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << *expr;
+    }
+
+    virtual void add_to_table(const Scope& scope, std::vector<KeyValPair>& indexes) const override {
+        auto exprtype = expr->get_type(scope);
+        for (auto& index : indexes) {
+            if (is_assignable(index.key, LuaType::NUMBER).yes) {
+                index.val = index.val | std::move(exprtype);
+                return;
+            }
+        }
+        indexes.push_back({Type::make_luatype(LuaType::NUMBER), std::move(exprtype)});
     }
 };
 
@@ -1290,6 +1321,17 @@ public:
     virtual void dump(std::ostream& out) const override {
         out << key << "=" << *value;
     }
+
+    virtual void add_to_table(const Scope& scope, std::vector<KeyValPair>& indexes) const override {
+        auto exprtype = value->get_type(scope);
+        for (auto& index : indexes) {
+            if (is_assignable(index.key, LuaType::STRING).yes) {
+                index.val = index.val | std::move(exprtype);
+                return;
+            }
+        }
+        indexes.push_back({Type::make_luatype(LuaType::STRING), std::move(exprtype)});
+    }
 };
 
 class NFieldKey : public NField {
@@ -1308,6 +1350,18 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << "[" << *key << "]=" << *value;
+    }
+
+    virtual void add_to_table(const Scope& scope, std::vector<KeyValPair>& indexes) const override {
+        auto keytype = key->get_type(scope);
+        auto exprtype = value->get_type(scope);
+        for (auto& index : indexes) {
+            if (is_assignable(index.key, keytype).yes) {
+                index.val = index.val | std::move(exprtype);
+                return;
+            }
+        }
+        indexes.push_back({std::move(keytype), std::move(exprtype)});
     }
 };
 
@@ -1332,7 +1386,17 @@ public:
     }
 
     virtual Type get_type(const Scope& scope) const override {
-        return Type::make_any();
+        std::vector<KeyValPair> indexes;
+
+        for (const auto& field : fields) {
+            field->add_to_table(scope, indexes);
+        }
+
+        if (!indexes.empty()) {
+            return Type::make_table(std::move(indexes));
+        } else {
+            return Type::make_table({{Type::make_any(), Type::make_any()}});
+        }
     }
 };
 

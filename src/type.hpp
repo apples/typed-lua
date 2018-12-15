@@ -374,6 +374,7 @@ inline std::string to_string(const TableType& table) {
         oss << to_string(index);
         first = false;
     }
+    oss << "}";
     return oss.str();
 }
 
