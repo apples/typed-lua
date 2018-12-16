@@ -264,26 +264,86 @@ public:
     }
 };
 
+class NFieldDecl : public Node {
+public:
+    NFieldDecl() = default;
+    NFieldDecl(std::string n, std::unique_ptr<NType> t) : name(std::move(n)), type(std::move(t)) {}
+    std::string name;
+    std::unique_ptr<NType> type;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        type->check(parent_scope, errors);
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << name << ":" << *type;
+    }
+};
+
+class NFieldDeclList : public Node {
+public:
+    NFieldDeclList() = default;
+    std::vector<std::unique_ptr<NFieldDecl>> fields;
+    mutable FieldMap cached_fields;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        for (const auto& field : fields) {
+            field->check(parent_scope, errors);
+            auto iter = std::find_if(cached_fields.begin(), cached_fields.end(), [&](FieldDecl& fd) {
+                return fd.name == field->name;
+            });
+            if (iter != cached_fields.end()) {
+                errors.emplace_back("Duplicate table key '" + field->name + "'", location);
+                iter->type = iter->type | field->type->get_type(parent_scope);
+            } else {
+                cached_fields.push_back({field->name, field->type->get_type(parent_scope)});
+            }
+        }
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        bool first = true;
+        for (const auto& field : fields) {
+            if (!first) {
+                out << ";";
+            }
+            out << *field;
+            first = false;
+        }
+    }
+
+    FieldMap get_types(const Scope& scope) const {
+        return cached_fields;
+    }
+};
+
 class NTypeTable : public NType {
 public:
     NTypeTable() = default;
-    NTypeTable(std::unique_ptr<NIndexList> i) : indexlist(std::move(i)) {}
+    NTypeTable(std::unique_ptr<NIndexList> i, std::unique_ptr<NFieldDeclList> f) : indexlist(std::move(i)), fieldlist(std::move(f)) {}
     std::unique_ptr<NIndexList> indexlist;
+    std::unique_ptr<NFieldDeclList> fieldlist;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         if (indexlist) indexlist->check(parent_scope, errors);
+        if (fieldlist) fieldlist->check(parent_scope, errors);
     }
 
     virtual void dump(std::ostream& out) const override {
         out << "{";
         if (indexlist) out << *indexlist;
+        if (fieldlist) out << *fieldlist;
         out << "}";
     }
 
     virtual Type get_type(const Scope& scope) const override {
         std::vector<KeyValPair> indexes;
+        FieldMap fields;
+
         if (indexlist) indexes = indexlist->get_types(scope);
-        return Type::make_table(std::move(indexes));
+        if (fieldlist) fields = fieldlist->get_types(scope);
+
+        return Type::make_table(std::move(indexes), std::move(fields));
     }
 };
 
@@ -1276,7 +1336,11 @@ public:
 
 class NField : public Node {
 public:
-    virtual void add_to_table(const Scope& scope, std::vector<KeyValPair>& indexes) const = 0;
+    virtual void add_to_table(
+        const Scope& scope,
+        std::vector<KeyValPair>& indexes,
+        FieldMap& fielddecls,
+        std::vector<CompileError>& errors) const = 0;
 };
 
 class NFieldExpr : public NField {
@@ -1293,7 +1357,12 @@ public:
         out << *expr;
     }
 
-    virtual void add_to_table(const Scope& scope, std::vector<KeyValPair>& indexes) const override {
+    virtual void add_to_table(
+        const Scope& scope,
+        std::vector<KeyValPair>& indexes,
+        FieldMap& fielddecls,
+        std::vector<CompileError>& errors) const override
+    {
         auto exprtype = expr->get_type(scope);
         for (auto& index : indexes) {
             if (is_assignable(index.key, LuaType::NUMBER).yes) {
@@ -1322,15 +1391,21 @@ public:
         out << key << "=" << *value;
     }
 
-    virtual void add_to_table(const Scope& scope, std::vector<KeyValPair>& indexes) const override {
-        auto exprtype = value->get_type(scope);
-        for (auto& index : indexes) {
-            if (is_assignable(index.key, LuaType::STRING).yes) {
-                index.val = index.val | std::move(exprtype);
-                return;
-            }
+    virtual void add_to_table(
+        const Scope& scope,
+        std::vector<KeyValPair>& indexes,
+        FieldMap& fielddecls,
+        std::vector<CompileError>& errors) const override
+    {
+        auto iter = std::find_if(fielddecls.begin(), fielddecls.end(), [&](FieldDecl& fd) {
+            return fd.name == key;
+        });
+        if (iter != fielddecls.end()) {
+            errors.emplace_back("Duplicate table key '" + key + "'", location);
+            iter->type = iter->type | value->get_type(scope);
+        } else {
+            fielddecls.push_back({key, value->get_type(scope)});
         }
-        indexes.push_back({Type::make_luatype(LuaType::STRING), std::move(exprtype)});
     }
 };
 
@@ -1352,7 +1427,12 @@ public:
         out << "[" << *key << "]=" << *value;
     }
 
-    virtual void add_to_table(const Scope& scope, std::vector<KeyValPair>& indexes) const override {
+    virtual void add_to_table(
+        const Scope& scope,
+        std::vector<KeyValPair>& indexes,
+        FieldMap& fielddecls,
+        std::vector<CompileError>& errors) const override
+    {
         auto keytype = key->get_type(scope);
         auto exprtype = value->get_type(scope);
         for (auto& index : indexes) {
@@ -1370,11 +1450,25 @@ public:
     NTableConstructor() = default;
     NTableConstructor(std::vector<std::unique_ptr<NField>> f) : fields(std::move(f)) {}
     std::vector<std::unique_ptr<NField>> fields;
+    mutable std::optional<Type> cached_type;
     
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         for (const auto& field : fields) {
             field->check(parent_scope, errors);
         }
+
+        std::vector<KeyValPair> indexes;
+        FieldMap fielddecls;
+
+        for (const auto& field : fields) {
+            field->add_to_table(parent_scope, indexes, fielddecls, errors);
+        }
+
+        if (indexes.empty() && fielddecls.empty()) {
+            indexes.push_back({Type::make_any(), Type::make_any()});
+        }
+
+        cached_type = Type::make_table(std::move(indexes), std::move(fielddecls));
     }
 
     virtual void dump(std::ostream& out) const override {
@@ -1386,16 +1480,10 @@ public:
     }
 
     virtual Type get_type(const Scope& scope) const override {
-        std::vector<KeyValPair> indexes;
-
-        for (const auto& field : fields) {
-            field->add_to_table(scope, indexes);
-        }
-
-        if (!indexes.empty()) {
-            return Type::make_table(std::move(indexes));
+        if (cached_type) {
+            return *cached_type;
         } else {
-            return Type::make_table({{Type::make_any(), Type::make_any()}});
+            return Type::make_any();
         }
     }
 };

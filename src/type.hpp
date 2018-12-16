@@ -6,6 +6,7 @@
 #include <vector>
 #include <sstream>
 #include <algorithm>
+#include <unordered_map>
 
 namespace typedlua {
 
@@ -20,6 +21,7 @@ enum class LuaType {
 class Type;
 class DeferredTypeCollection;
 struct KeyValPair;
+struct FieldDecl;
 
 struct FunctionType {
     std::vector<Type> params;
@@ -44,8 +46,10 @@ struct SumType {
     std::vector<Type> types;
 };
 
+using FieldMap = std::vector<FieldDecl>;
 struct TableType {
     std::vector<KeyValPair> indexes;
+    FieldMap fields;
 };
 
 struct DeferredType {
@@ -130,10 +134,10 @@ public:
         }
     }
 
-    static Type make_table(std::vector<KeyValPair> indexes) {
+    static Type make_table(std::vector<KeyValPair> indexes, FieldMap fields) {
         auto type = Type{};
         type.tag = Tag::TABLE;
-        new (&type.table) TableType{std::move(indexes)};
+        new (&type.table) TableType{std::move(indexes), std::move(fields)};
         return type;
     }
 
@@ -235,6 +239,11 @@ private:
 struct KeyValPair {
     Type key;
     Type val;
+};
+
+struct FieldDecl {
+    std::string name;
+    Type type;
 };
 
 struct AssignResult {
@@ -372,6 +381,13 @@ inline std::string to_string(const TableType& table) {
             oss << ";";
         }
         oss << to_string(index);
+        first = false;
+    } 
+    for (const auto& field : table.fields) {
+        if (!first) {
+            oss << ";";
+        }
+        oss << field.name << ":" << to_string(field.type);
         first = false;
     }
     oss << "}";

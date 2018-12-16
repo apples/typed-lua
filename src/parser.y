@@ -40,6 +40,8 @@
     std::vector<typedlua::ast::NTypeFunctionParam>* typefuncparams;
     typedlua::ast::NIndex* index;
     typedlua::ast::NIndexList* indexlist;
+    typedlua::ast::NFieldDecl* fielddecl;
+    typedlua::ast::NFieldDeclList* fielddecllist;
 }
 
 %code {
@@ -83,6 +85,8 @@
 %destructor { delete $$; } <typefuncparams>
 %destructor { delete $$; } <index>
 %destructor { delete $$; } <indexlist>
+%destructor { delete $$; } <fielddecl>
+%destructor { delete $$; } <fielddecllist>
 
 %token TCEQ TCNE TCLE TCGE TSHL TSHR
 %token TSLASH2 TDOT2 TDOT3 TCOLON2
@@ -129,6 +133,8 @@
 %type <typefuncparams> typefuncparams
 %type <index> index
 %type <indexlist> indexes tableindexes
+%type <fielddecl> fielddecl
+%type <fielddecllist> fielddecls tablefields
 
 %start chunk
 
@@ -338,8 +344,8 @@ typefuncparams: ':' type {
               }
               ;
 
-tabletype: '{' tableindexes '}' {
-             $$ = new NTypeTable(ptr($tableindexes));
+tabletype: '{' tableindexes tablefields '}' {
+             $$ = new NTypeTable(ptr($tableindexes), ptr($tablefields));
              $$->location = @$;
          }
          ;
@@ -369,6 +375,33 @@ index: '[' type[key] ']' ':' type[val] {
          $$->location = @$;
      }
      ;
+
+tablefields: %empty { $$ = nullptr; }
+           | fielddecls { $$ = $1; }
+           ;
+
+fielddecls: fielddecl {
+              $$ = new NFieldDeclList();
+              $$->location = @$;
+              $$->fields.push_back(ptr($fielddecl));
+          }
+          | fielddecls fielddecl {
+              $$ = $1;
+              $$->location = @$;
+              $$->fields.push_back(ptr($fielddecl));
+          }
+          | fielddecls ';' {
+              $$ = $1;
+              $$->location = @$;
+          }
+          ;
+
+fielddecl: TIDENTIFIER[name] ':' type {
+             $$ = new NFieldDecl(std::move(*$name), ptr($type));
+             $$->location = @$;
+             delete $name;
+         }
+         ;
 
 binopcall: expr[l] TOR expr[r] { BINOP($$, "or", $l, $r, @$) }
          | expr[l] TAND expr[r] { BINOP($$, "and", $l, $r, @$) }
