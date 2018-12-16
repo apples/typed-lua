@@ -30,3 +30,13 @@ d = { x=13 }
 d.x = 45
 d.x = nil
 d.horse = 13
+
+local complex = {
+    p2d = d,
+    x = 9
+}
+
+complex = nil
+
+complex.p2d.x = 7
+complex.p2d.y = nil

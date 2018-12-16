@@ -319,6 +319,14 @@ private:
 };
 
 inline std::string to_string(const Type& type);
+inline std::string to_string(const LuaType& luatype);
+inline std::string to_string(const FunctionType& function);
+inline std::string to_string(const TupleType& tuple);
+inline std::string to_string(const SumType& sum);
+inline std::string to_string(const KeyValPair& kvp);
+inline std::string to_string(const TableType& table);
+inline std::string to_string(const DeferredType& defer);
+inline std::string to_string(const LiteralType& literal);
 
 class DeferredTypeCollection {
 public:
@@ -389,6 +397,7 @@ inline AssignResult is_assignable(const Type& lhs, const Type& rhs);
 
 inline std::optional<Type> get_field_type(const Type& table, const std::string& name, std::vector<std::string>& notes);
 inline std::optional<Type> get_index_type(const Type& type, const Type& key, std::vector<std::string>& notes);
+inline std::optional<Type> get_return_type(const Type& type, std::vector<std::string>& notes);
 
 inline Type operator|(const Type& lhs, const Type& rhs) {
     if (is_assignable(lhs, rhs).yes) {
@@ -596,6 +605,49 @@ inline std::optional<Type> get_index_type(const Type& type, const Type& key, std
     }
 }
 
+inline std::optional<Type> get_return_type(const FunctionType& func, std::vector<std::string>& notes) {
+    if (func.ret) {
+        return *func.ret;
+    } else {
+        notes.push_back("Function `" + to_string(func) + "` has no return type");
+        return std::nullopt;
+    }
+}
+
+inline std::optional<Type> get_return_type(const SumType& sum, std::vector<std::string>& notes) {
+    std::optional<Type> rv;
+
+    for (const auto& type : sum.types) {
+        auto t = get_return_type(type, notes);
+        if (t) {
+            if (!rv) {
+                rv = std::move(t);
+            } else {
+                rv = *rv | *t;
+            }
+        } else {
+            notes.push_back("Cannot call `" + to_string(sum) + "`");
+        }
+    }
+
+    return rv;
+}
+
+inline std::optional<Type> get_return_type(const DeferredType& defer, std::vector<std::string>& notes) {
+    return get_return_type(defer.collection->get(defer.id), notes);
+}
+
+inline std::optional<Type> get_return_type(const Type& type, std::vector<std::string>& notes) {
+    switch (type.get_tag()) {
+        case Type::Tag::ANY: return Type::make_any();
+        case Type::Tag::SUM: return get_return_type(type.get_sum(), notes);
+        case Type::Tag::FUNCTION: return get_return_type(type.get_function(), notes);
+        case Type::Tag::DEFERRED: return get_return_type(type.get_deferred(), notes);
+        default:
+            notes.push_back("Type `" + to_string(type) + "` cannot be called");
+            return std::nullopt;
+    }
+}
 
 inline std::string to_string(const LuaType& luatype) {
     switch (luatype) {

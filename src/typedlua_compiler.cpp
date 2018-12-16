@@ -24,6 +24,7 @@ auto Compiler::compile(std::string_view source, std::string_view name) -> Result
 
     if (typedluaparse(scanner, root) == 0 && root) {
         auto scope = Scope(global_scope);
+        scope.deduce_return_type();
         std::vector<CompileError> errors;
         root->check(scope, errors);
         oss << *root << std::endl;

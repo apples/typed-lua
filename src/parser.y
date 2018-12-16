@@ -675,10 +675,16 @@ assign: varlist '=' explist {
       ;
 
 functioncall: prefixexpr args {
-                $$ = new NFunctionCall(
-                    std::unique_ptr<NExpr>($1),
-                    std::unique_ptr<NArgSeq>($2));
+                $$ = new NFunctionCall(ptr($prefixexpr), ptr($args));
                 $$->location = @$;
+            }
+            | prefixexpr ':' TIDENTIFIER[name] args {
+                $$ = new NFunctionSelfCall(
+                    ptr($prefixexpr),
+                    std::move(*$name),
+                    ptr($args));
+                $$->location = @$;
+                delete $name;
             }
             ;
 

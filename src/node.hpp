@@ -582,6 +582,62 @@ public:
     }
 };
 
+class NFunctionSelfCall : public NExpr {
+public:
+    NFunctionSelfCall() = default;
+    NFunctionSelfCall(std::unique_ptr<NExpr> p, std::string n, std::unique_ptr<NArgSeq> a) :
+        prefix(std::move(p)),
+        name(std::move(n)),
+        args(std::move(a)) {}
+    std::unique_ptr<NExpr> prefix;
+    std::string name;
+    std::unique_ptr<NArgSeq> args;
+    mutable std::optional<Type> cached_type;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        prefix->check(parent_scope, errors);
+        if (args) args->check(parent_scope, errors);
+
+        auto prefixtype = prefix->get_type(parent_scope);
+
+        std::vector<std::string> notes;
+
+        auto functype = get_field_type(prefixtype, name, notes);
+
+        std::optional<Type> rettype;
+
+        if (!functype) {
+            notes.push_back("Could not find method '" + name + "' in type `" + to_string(prefixtype) + "`");
+        } else {
+            rettype = get_return_type(*functype, notes);
+        }
+
+        if (!notes.empty()) {
+            std::string msg;
+            for (const auto& note : notes) {
+                msg = note + "\n" + msg;
+            }
+            errors.emplace_back(msg, location);
+        }
+
+        cached_type = std::move(rettype);
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << *prefix << ":" << name << "(";
+        if (args) out << *args;
+        out << ")";
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        if (cached_type) {
+            return *cached_type;
+        } else {
+            return Type::make_any();
+        }
+    }
+};
+
 class NNumberLiteral : public NExpr {
 public:
     NNumberLiteral() = default;
