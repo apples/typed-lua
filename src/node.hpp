@@ -1621,6 +1621,7 @@ public:
             case Op::IDIV: require_math(); break;
             case Op::MOD: require_math(); break;
             case Op::POW: require_math(); break;
+            default: throw std::logic_error("Invalid binary operator");
         }
     }
 
@@ -1648,14 +1649,17 @@ public:
             case Op::IDIV: out << "//"; break;
             case Op::MOD: out << "%"; break;
             case Op::POW: out << "^"; break;
+            default: throw std::logic_error("Invalid binary operator");
         }
         out << " " << *right << ")";
     }
 
     virtual Type get_type(const Scope& scope) const override {
         switch (op) {
-            case Op::OR: return left->get_type(scope) | right->get_type(scope);
-            case Op::AND: return left->get_type(scope) | right->get_type(scope);
+            case Op::OR:
+                return (left->get_type(scope) - Type::make_literal(false))
+                    | right->get_type(scope);
+            case Op::AND: return Type::make_literal(false) | right->get_type(scope);
             case Op::LT: return Type::make_luatype(LuaType::BOOLEAN);
             case Op::GT: return Type::make_luatype(LuaType::BOOLEAN);
             case Op::LEQ: return Type::make_luatype(LuaType::BOOLEAN);
@@ -1675,6 +1679,7 @@ public:
             case Op::IDIV: return Type::make_luatype(LuaType::NUMBER);
             case Op::MOD: return Type::make_luatype(LuaType::NUMBER);
             case Op::POW: return Type::make_luatype(LuaType::NUMBER);
+            default: throw std::logic_error("Invalid binary operator");
         }
     }
 };

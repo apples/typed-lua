@@ -57,6 +57,90 @@ struct DeferredType {
     int id;
 };
 
+struct LiteralType {
+    LuaType underlying_type;
+    union {
+        bool boolean;
+        float number;
+        std::string string;
+    };
+
+    LiteralType() : underlying_type(LuaType::NIL) {}
+    LiteralType(bool b) : underlying_type(LuaType::BOOLEAN), boolean(b) {}
+    LiteralType(float n) : underlying_type(LuaType::NUMBER), number(n) {}
+    LiteralType(std::string s) : underlying_type(LuaType::STRING), string(std::move(s)) {}
+
+    LiteralType(LiteralType&& other) :
+        underlying_type(std::exchange(other.underlying_type, LuaType::NIL))
+    {
+        switch (underlying_type) {
+            case LuaType::BOOLEAN: boolean = other.boolean; break;
+            case LuaType::NUMBER: number = other.number; break;
+            case LuaType::STRING:
+                new (&string) std::string(std::move(other.string));
+                break;
+        }
+    }
+
+    LiteralType(const LiteralType& other) :
+        underlying_type(other.underlying_type)
+    {
+        switch (underlying_type) {
+            case LuaType::BOOLEAN: boolean = other.boolean; break;
+            case LuaType::NUMBER: number = other.number; break;
+            case LuaType::STRING:
+                new (&string) std::string(other.string);
+                break;
+        }
+    }
+
+    LiteralType& operator=(LiteralType&& other) {
+        switch (underlying_type) {
+            case LuaType::STRING:
+                std::destroy_at(&string);
+                break;
+        }
+
+        underlying_type = std::exchange(other.underlying_type, LuaType::NIL);
+        switch (underlying_type) {
+            case LuaType::BOOLEAN: boolean = other.boolean; break;
+            case LuaType::NUMBER: number = other.number; break;
+            case LuaType::STRING:
+                new (&string) std::string(std::move(other.string));
+                break;
+        }
+
+        return *this;
+    }
+
+    LiteralType& operator=(const LiteralType& other) {
+        switch (underlying_type) {
+            case LuaType::STRING:
+                std::destroy_at(&string);
+                break;
+        }
+        
+        underlying_type = other.underlying_type;
+        switch (underlying_type) {
+            case LuaType::BOOLEAN: boolean = other.boolean; break;
+            case LuaType::NUMBER: number = other.number; break;
+            case LuaType::STRING:
+                new (&string) std::string(other.string);
+                break;
+        }
+
+        return *this;
+    }
+
+    ~LiteralType() {
+        switch (underlying_type) {
+            case LuaType::STRING:
+                std::destroy_at(&string);
+                break;
+        }
+    }
+};
+
 class Type {
 public:
     enum class Tag {
@@ -67,7 +151,8 @@ public:
         TUPLE,
         SUM,
         TABLE,
-        DEFERRED
+        DEFERRED,
+        LITERAL
     };
 
     Type() : tag(Tag::VOID) {}
@@ -148,6 +233,13 @@ public:
         return type;
     }
 
+    static Type make_literal(LiteralType literal) {
+        auto type = Type{};
+        type.tag = Tag::LITERAL;
+        new (&type.literal) LiteralType(std::move(literal));
+        return type;
+    }
+
     const Tag& get_tag() const { return tag; }
 
     const LuaType& get_luatype() const { return luatype; }
@@ -162,7 +254,11 @@ public:
 
     const DeferredType& get_deferred() const { return deferred; }
 
+    const LiteralType& get_literal() const { return literal; }
+
     friend Type operator|(const Type& lhs, const Type& rhs);
+
+    friend Type operator-(const Type& lhs, const Type& rhs);
 
 private:
     void destroy() {
@@ -175,6 +271,7 @@ private:
             case Tag::SUM: std::destroy_at(&sum); break;
             case Tag::TABLE: std::destroy_at(&table); break;
             case Tag::DEFERRED: std::destroy_at(&deferred); break;
+            case Tag::LITERAL: std::destroy_at(&literal); break;
             default: throw std::logic_error("Type tag not implemented");
         }
     }
@@ -189,6 +286,7 @@ private:
             case Tag::SUM: new (&sum) SumType(other.sum); break;
             case Tag::TABLE: new (&table) TableType(other.table); break;
             case Tag::DEFERRED: new (&deferred) DeferredType(other.deferred); break;
+            case Tag::LITERAL: new (&literal) LiteralType(other.literal); break;
             default: throw std::logic_error("Type tag not implemented");
         }
     }
@@ -200,6 +298,7 @@ private:
             case Tag::SUM: new (&sum) SumType(std::move(other.sum)); break;
             case Tag::TABLE: new (&table) TableType(std::move(other.table)); break;
             case Tag::DEFERRED: new (&deferred) DeferredType(std::move(other.deferred)); break;
+            case Tag::LITERAL: new (&literal) LiteralType(std::move(other.literal)); break;
             default: assign_from(other);
         }
     }
@@ -212,6 +311,7 @@ private:
         SumType sum;
         TableType table;
         DeferredType deferred;
+        LiteralType literal;
     };
 };
 
@@ -265,12 +365,14 @@ inline AssignResult is_assignable(const FunctionType& lfunc, const FunctionType&
 inline AssignResult is_assignable(const TupleType& ltuple, const TupleType& rtuple);
 inline AssignResult is_assignable(const TableType& ltable, const TableType& rtable);
 inline AssignResult is_assignable(const DeferredType& ldefer, const DeferredType& rdefer);
+inline AssignResult is_assignable(const LiteralType& lliteral, const LiteralType& rliteral);
 inline AssignResult is_assignable(const Type& lhs, const LuaType& rlua);
 inline AssignResult is_assignable(const Type& lhs, const FunctionType& rfunc);
 inline AssignResult is_assignable(const Type& lhs, const SumType& rsum);
 inline AssignResult is_assignable(const Type& lhs, const TupleType& rtuple);
 inline AssignResult is_assignable(const Type& lhs, const TableType& rtable);
 inline AssignResult is_assignable(const Type& lhs, const DeferredType& rdefer);
+inline AssignResult is_assignable(const Type& lhs, const LiteralType& rliteral);
 inline AssignResult is_assignable(const Type& lhs, const Type& rhs);
 
 inline Type operator|(const Type& lhs, const Type& rhs) {
@@ -306,6 +408,88 @@ inline Type operator|(const Type& lhs, const Type& rhs) {
     }
 
     return rv;
+}
+
+inline Type operator-(const Type& lhs, const Type& rhs) {
+
+    if (lhs.get_tag() == Type::Tag::SUM) {
+        std::vector<Type> result;
+
+        for (const auto& type : lhs.get_sum().types) {
+            auto reduced = type - rhs;
+            if (reduced.get_tag() != Type::Tag::VOID) {
+                result.push_back(std::move(reduced));
+            }
+        }
+
+        if (result.size() == 0) {
+            return Type{};
+        }
+
+        if (result.size() == 1) {
+            return std::move(result[0]);
+        }
+
+        auto rv = Type{};
+        rv.tag = Type::Tag::SUM;
+        new (&rv.sum) SumType{std::move(result)};
+        return rv;
+    }
+
+    if (rhs.get_tag() == Type::Tag::SUM) {
+        auto result = lhs;
+
+        for (const auto& type : rhs.get_sum().types) {
+            result = result - rhs;
+        }
+
+        return result;
+    }
+
+    switch (rhs.get_tag()) {
+        case Type::Tag::LITERAL:
+            switch (lhs.get_tag()) {
+                case Type::Tag::LUATYPE: {
+                    const auto& literal = rhs.get_literal();
+
+                    if (lhs.get_luatype() == literal.underlying_type) {
+                        switch (literal.underlying_type) {
+                            case LuaType::BOOLEAN: return Type::make_literal(!literal.boolean);
+                            default: return lhs;
+                        }
+                    }
+                } break;
+                case Type::Tag::LITERAL: {
+                    const auto& lliteral = lhs.get_literal();
+                    const auto& rliteral = rhs.get_literal();
+
+                    auto are_same = [&]{
+                        if (lliteral.underlying_type == rliteral.underlying_type) {
+                            switch (lliteral.underlying_type) {
+                                case LuaType::BOOLEAN:
+                                    return lliteral.boolean == rliteral.boolean;
+                                case LuaType::NUMBER:
+                                    return lliteral.number == rliteral.number;
+                                case LuaType::STRING:
+                                    return lliteral.string == rliteral.string;
+                            }
+                        }
+
+                        return false;
+                    };
+
+                    if (are_same()) {
+                        return Type{};
+                    } else {
+                        return lhs;
+                    }
+                }
+            }
+            break;
+    }
+
+
+    return lhs;
 }
 
 inline std::string to_string(const LuaType& luatype) {
@@ -400,6 +584,17 @@ inline std::string to_string(const DeferredType& defer) {
     return oss.str();
 }
 
+inline std::string to_string(const LiteralType& literal) {
+    std::ostringstream oss;
+    switch (literal.underlying_type) {
+        case LuaType::NIL: oss << "<nil literal>"; break;
+        case LuaType::BOOLEAN: oss << (literal.boolean ? "true" : "false"); break;
+        case LuaType::NUMBER: oss << literal.number; break;
+        case LuaType::STRING: oss << literal.string; break;
+    }
+    return oss.str();
+}
+
 inline std::string to_string(const Type& type) {
     switch (type.get_tag()) {
         case Type::Tag::VOID: return "void";
@@ -410,6 +605,7 @@ inline std::string to_string(const Type& type) {
         case Type::Tag::SUM: return to_string(type.get_sum());
         case Type::Tag::TABLE: return to_string(type.get_table());
         case Type::Tag::DEFERRED: return to_string(type.get_deferred());
+        case Type::Tag::LITERAL: return to_string(type.get_literal());
         default: throw std::logic_error("Tag not implemented for to_string");
     }
 }
@@ -581,6 +777,30 @@ inline AssignResult is_assignable(const DeferredType& ldefer, const DeferredType
     return is_assignable(ldefer.collection->get(ldefer.id), rdefer);
 }
 
+inline AssignResult is_assignable(const LiteralType& lliteral, const LiteralType& rliteral) {
+    if (lliteral.underlying_type == rliteral.underlying_type) {
+        switch (lliteral.underlying_type) {
+            case LuaType::BOOLEAN:
+                if (lliteral.boolean == rliteral.boolean) {
+                    return true;
+                }
+                break;
+            case LuaType::NUMBER:
+                if (lliteral.number == rliteral.number) {
+                    return true;
+                }
+                break;
+            case LuaType::STRING:
+                if (lliteral.string == rliteral.string) {
+                    return true;
+                }
+                break;
+        }
+    }
+
+    return {false, cannot_assign(lliteral, rliteral)};
+}
+
 inline AssignResult is_assignable(const Type& lhs, const FunctionType& rfunc) {
     switch (lhs.get_tag()) {
         case Type::Tag::ANY: return true;
@@ -631,6 +851,16 @@ inline AssignResult is_assignable(const Type& lhs, const DeferredType& rdefer) {
     }
 }
 
+inline AssignResult is_assignable(const Type& lhs, const LiteralType& rliteral) {
+    switch (lhs.get_tag()) {
+        case Type::Tag::ANY: return true;
+        case Type::Tag::LITERAL: return is_assignable(lhs.get_literal(), rliteral);
+        case Type::Tag::SUM: return is_assignable(lhs.get_sum(), rliteral);
+        case Type::Tag::DEFERRED: return is_assignable(lhs.get_deferred(), rliteral);
+        default: return is_assignable(lhs, rliteral.underlying_type);
+    }
+}
+
 inline AssignResult is_assignable(const Type& lhs, const Type& rhs) {
     switch (rhs.get_tag()) {
         case Type::Tag::VOID: return {false, "Cannot assign `void` to `" + to_string(lhs) + "`"};
@@ -641,6 +871,7 @@ inline AssignResult is_assignable(const Type& lhs, const Type& rhs) {
         case Type::Tag::SUM: return is_assignable(lhs, rhs.get_sum());
         case Type::Tag::TABLE: return is_assignable(lhs, rhs.get_table());
         case Type::Tag::DEFERRED: return is_assignable(lhs, rhs.get_deferred());
+        case Type::Tag::LITERAL: return is_assignable(lhs, rhs.get_literal());
         default: throw std::logic_error("Tag not implemented for assignment");
     }
 }
