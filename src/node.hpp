@@ -1490,26 +1490,192 @@ public:
 
 class NBinop : public NExpr {
 public:
+    enum class Op {
+        OR,
+        AND,
+        LT,
+        GT,
+        LEQ,
+        GEQ,
+        NEQ,
+        EQ,
+        BOR,
+        BXOR,
+        BAND,
+        SHL,
+        SHR,
+        CONCAT,
+        ADD,
+        SUB,
+        MUL,
+        DIV,
+        IDIV,
+        MOD,
+        POW
+    };
+
     NBinop() = default;
-    NBinop(std::string o, std::unique_ptr<NExpr> l, std::unique_ptr<NExpr> r) :
-        opname(std::move(o)),
+    NBinop(Op o, std::unique_ptr<NExpr> l, std::unique_ptr<NExpr> r) :
+        op(o),
         left(std::move(l)),
         right(std::move(r)) {}
-    std::string opname;
+    Op op;
     std::unique_ptr<NExpr> left;
     std::unique_ptr<NExpr> right;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         left->check(parent_scope, errors);
         right->check(parent_scope, errors);
+
+        auto lhs = left->get_type(parent_scope);
+        auto rhs = right->get_type(parent_scope);
+
+        auto require_compare = [&]{
+            for (const auto& type : {LuaType::NUMBER, LuaType::STRING}) {
+                auto l = is_assignable(type, lhs);
+                auto r = is_assignable(type, rhs);
+
+                if (l.yes && r.yes) {
+                    return;
+                }
+            }
+
+            errors.emplace_back("Cannot compare `" + to_string(lhs) + "` to `" + to_string(rhs) + "`", location);
+        };
+
+        auto require_equal = [&]{
+            auto l = is_assignable(lhs, rhs);
+            auto r = is_assignable(rhs, lhs);
+
+            if (l.yes || r.yes) {
+                return;
+            }
+
+            errors.emplace_back("Cannot compare `" + to_string(lhs) + "` to `" + to_string(rhs) + "`", location);
+        };
+
+        auto require_bitwise = [&]{
+            auto l = is_assignable(LuaType::NUMBER, lhs);
+            auto r = is_assignable(LuaType::NUMBER, rhs);
+
+            if (!l.yes) {
+                l.messages.push_back("In bitwise operation");
+                errors.emplace_back(to_string(l), location);
+            }
+
+            if (!r.yes) {
+                r.messages.push_back("In bitwise operation");
+                errors.emplace_back(to_string(r), location);
+            }
+        };
+
+        auto require_concat = [&]{
+            auto l = is_assignable(LuaType::STRING, lhs);
+            auto r = is_assignable(LuaType::STRING, rhs);
+
+            if (!l.yes) {
+                l.messages.push_back("In concat operation");
+                errors.emplace_back(to_string(l), location);
+            }
+
+            if (!r.yes) {
+                r.messages.push_back("In concat operation");
+                errors.emplace_back(to_string(r), location);
+            }
+        };
+
+        auto require_math = [&]{
+            auto l = is_assignable(LuaType::NUMBER, lhs);
+            auto r = is_assignable(LuaType::NUMBER, rhs);
+
+            if (!l.yes) {
+                l.messages.push_back("In arithmetic operation");
+                errors.emplace_back(to_string(l), location);
+            }
+
+            if (!r.yes) {
+                r.messages.push_back("In arithmetic operation");
+                errors.emplace_back(to_string(r), location);
+            }
+        };
+
+        switch (op) {
+            case Op::OR: break;
+            case Op::AND: break;
+            case Op::LT: require_compare(); break;
+            case Op::GT: require_compare(); break;
+            case Op::LEQ: require_compare(); break;
+            case Op::GEQ: require_compare(); break;
+            case Op::NEQ: require_equal(); break;
+            case Op::EQ: require_equal(); break;
+            case Op::BOR: require_bitwise(); break;
+            case Op::BXOR: require_bitwise(); break;
+            case Op::BAND: require_bitwise(); break;
+            case Op::SHL: require_bitwise(); break;
+            case Op::SHR: require_bitwise(); break;
+            case Op::CONCAT: require_concat(); break;
+            case Op::ADD: require_math(); break;
+            case Op::SUB: require_math(); break;
+            case Op::MUL: require_math(); break;
+            case Op::DIV: require_math(); break;
+            case Op::IDIV: require_math(); break;
+            case Op::MOD: require_math(); break;
+            case Op::POW: require_math(); break;
+        }
     }
 
     virtual void dump(std::ostream& out) const override {
-        out << "(" << *left << " " << opname << " " << *right << ")";
+        out << "(" << *left << " ";
+        switch (op) {
+            case Op::OR: out << "or"; break;
+            case Op::AND: out << "and"; break;
+            case Op::LT: out << "<"; break;
+            case Op::GT: out << ">"; break;
+            case Op::LEQ: out << "<="; break;
+            case Op::GEQ: out << ">="; break;
+            case Op::NEQ: out << "~="; break;
+            case Op::EQ: out << "=="; break;
+            case Op::BOR: out << "|"; break;
+            case Op::BXOR: out << "~"; break;
+            case Op::BAND: out << "&"; break;
+            case Op::SHL: out << "<<"; break;
+            case Op::SHR: out << ">>"; break;
+            case Op::CONCAT: out << ".."; break;
+            case Op::ADD: out << "+"; break;
+            case Op::SUB: out << "-"; break;
+            case Op::MUL: out << "*"; break;
+            case Op::DIV: out << "/"; break;
+            case Op::IDIV: out << "//"; break;
+            case Op::MOD: out << "%"; break;
+            case Op::POW: out << "^"; break;
+        }
+        out << " " << *right << ")";
     }
 
     virtual Type get_type(const Scope& scope) const override {
-        return Type::make_any();
+        switch (op) {
+            case Op::OR: return left->get_type(scope) | right->get_type(scope);
+            case Op::AND: return left->get_type(scope) | right->get_type(scope);
+            case Op::LT: return Type::make_luatype(LuaType::BOOLEAN);
+            case Op::GT: return Type::make_luatype(LuaType::BOOLEAN);
+            case Op::LEQ: return Type::make_luatype(LuaType::BOOLEAN);
+            case Op::GEQ: return Type::make_luatype(LuaType::BOOLEAN);
+            case Op::NEQ: return Type::make_luatype(LuaType::BOOLEAN);
+            case Op::EQ: return Type::make_luatype(LuaType::BOOLEAN);
+            case Op::BOR: return Type::make_luatype(LuaType::NUMBER);
+            case Op::BXOR: return Type::make_luatype(LuaType::NUMBER);
+            case Op::BAND: return Type::make_luatype(LuaType::NUMBER);
+            case Op::SHL: return Type::make_luatype(LuaType::NUMBER);
+            case Op::SHR: return Type::make_luatype(LuaType::NUMBER);
+            case Op::CONCAT: return Type::make_luatype(LuaType::STRING);
+            case Op::ADD: return Type::make_luatype(LuaType::NUMBER);
+            case Op::SUB: return Type::make_luatype(LuaType::NUMBER);
+            case Op::MUL: return Type::make_luatype(LuaType::NUMBER);
+            case Op::DIV: return Type::make_luatype(LuaType::NUMBER);
+            case Op::IDIV: return Type::make_luatype(LuaType::NUMBER);
+            case Op::MOD: return Type::make_luatype(LuaType::NUMBER);
+            case Op::POW: return Type::make_luatype(LuaType::NUMBER);
+        }
     }
 };
 

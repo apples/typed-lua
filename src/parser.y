@@ -60,8 +60,8 @@
         return std::unique_ptr<T>(expr);
     }
 
-    #define BINOP(OBJ, NAME, LEFT, RIGHT, LOC) \
-        OBJ = new NBinop(NAME, ptr(LEFT), ptr(RIGHT)); \
+    #define BINOP(OBJ, OP, LEFT, RIGHT, LOC) \
+        OBJ = new NBinop(NBinop::Op::OP, ptr(LEFT), ptr(RIGHT)); \
         OBJ->location = LOC;
     #define UNARYOP(OBJ, NAME, EXPR, LOC) \
         OBJ = new NUnaryop(NAME, ptr(EXPR)); \
@@ -403,27 +403,27 @@ fielddecl: TIDENTIFIER[name] ':' type {
          }
          ;
 
-binopcall: expr[l] TOR expr[r] { BINOP($$, "or", $l, $r, @$) }
-         | expr[l] TAND expr[r] { BINOP($$, "and", $l, $r, @$) }
-         | expr[l] '<' expr[r] { BINOP($$, "<", $l, $r, @$) }
-         | expr[l] '>' expr[r] { BINOP($$, ">", $l, $r, @$) }
-         | expr[l] TCLE expr[r] { BINOP($$, "<=", $l, $r, @$) }
-         | expr[l] TCGE expr[r] { BINOP($$, ">=", $l, $r, @$) }
-         | expr[l] TCNE expr[r] { BINOP($$, "~=", $l, $r, @$) }
-         | expr[l] TCEQ expr[r] { BINOP($$, "==", $l, $r, @$) }
-         | expr[l] '|' expr[r] { BINOP($$, "|", $l, $r, @$) }
-         | expr[l] '~' expr[r] { BINOP($$, "~", $l, $r, @$) }
-         | expr[l] '&' expr[r] { BINOP($$, "&", $l, $r, @$) }
-         | expr[l] TSHL expr[r] { BINOP($$, "<<", $l, $r, @$) }
-         | expr[l] TSHR expr[r] { BINOP($$, ">>", $l, $r, @$) }
-         | expr[l] TDOT2 expr[r] { BINOP($$, "..", $l, $r, @$) }
-         | expr[l] '+' expr[r] { BINOP($$, "+", $l, $r, @$) }
-         | expr[l] '-' expr[r] { BINOP($$, "-", $l, $r, @$) }
-         | expr[l] '*' expr[r] { BINOP($$, "*", $l, $r, @$) }
-         | expr[l] '/' expr[r] { BINOP($$, "/", $l, $r, @$) }
-         | expr[l] TSLASH2 expr[r] { BINOP($$, "//", $l, $r, @$) }
-         | expr[l] '%' expr[r] { BINOP($$, "%", $l, $r, @$) }
-         | expr[l] '^' expr[r] { BINOP($$, "^", $l, $r, @$) }
+binopcall: expr[l] TOR expr[r] { BINOP($$, OR, $l, $r, @$) }
+         | expr[l] TAND expr[r] { BINOP($$, AND, $l, $r, @$) }
+         | expr[l] '<' expr[r] { BINOP($$, LT, $l, $r, @$) }
+         | expr[l] '>' expr[r] { BINOP($$, GT, $l, $r, @$) }
+         | expr[l] TCLE expr[r] { BINOP($$, LEQ, $l, $r, @$) }
+         | expr[l] TCGE expr[r] { BINOP($$, GEQ, $l, $r, @$) }
+         | expr[l] TCNE expr[r] { BINOP($$, NEQ, $l, $r, @$) }
+         | expr[l] TCEQ expr[r] { BINOP($$, EQ, $l, $r, @$) }
+         | expr[l] '|' expr[r] { BINOP($$, BOR, $l, $r, @$) }
+         | expr[l] '~' expr[r] { BINOP($$, BXOR, $l, $r, @$) }
+         | expr[l] '&' expr[r] { BINOP($$, BAND, $l, $r, @$) }
+         | expr[l] TSHL expr[r] { BINOP($$, SHL, $l, $r, @$) }
+         | expr[l] TSHR expr[r] { BINOP($$, SHR, $l, $r, @$) }
+         | expr[l] TDOT2 expr[r] { BINOP($$, CONCAT, $l, $r, @$) }
+         | expr[l] '+' expr[r] { BINOP($$, ADD, $l, $r, @$) }
+         | expr[l] '-' expr[r] { BINOP($$, SUB, $l, $r, @$) }
+         | expr[l] '*' expr[r] { BINOP($$, MUL, $l, $r, @$) }
+         | expr[l] '/' expr[r] { BINOP($$, DIV, $l, $r, @$) }
+         | expr[l] TSLASH2 expr[r] { BINOP($$, IDIV, $l, $r, @$) }
+         | expr[l] '%' expr[r] { BINOP($$, MOD, $l, $r, @$) }
+         | expr[l] '^' expr[r] { BINOP($$, POW, $l, $r, @$) }
          ;
 
 unaryopcall: TNOT expr { UNARYOP($$, "not", $expr, @$) }
