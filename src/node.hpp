@@ -368,7 +368,7 @@ public:
         }
 
         auto& deferred = parent_scope.get_deferred_types();
-        const auto deferred_id = deferred.reserve();
+        const auto deferred_id = deferred.reserve(name);
 
         parent_scope.add_type(name, Type::make_deferred(deferred, deferred_id));
         type->check(parent_scope, errors);

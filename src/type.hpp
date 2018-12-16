@@ -322,21 +322,30 @@ inline std::string to_string(const Type& type);
 
 class DeferredTypeCollection {
 public:
-    int reserve() {
-        types.emplace_back();
-        return types.size() - 1;
+    int reserve(std::string name) {
+        entries.emplace_back(Entry{{}, std::move(name)});
+        return entries.size() - 1;
     }
 
     const Type& get(int i) const {
-        return types[i];
+        return entries[i].type;
+    }
+
+    const std::string& get_name(int i) const {
+        return entries[i].name;
     }
 
     void set(int i, Type t) {
-        types[i] = std::move(t);
+        entries[i].type = std::move(t);
     }
 
 private:
-    std::vector<Type> types;
+    struct Entry {
+        Type type;
+        std::string name;
+    };
+
+    std::vector<Entry> entries;
 };
 
 struct KeyValPair {
@@ -681,9 +690,7 @@ inline std::string to_string(const TableType& table) {
 }
 
 inline std::string to_string(const DeferredType& defer) {
-    std::ostringstream oss;
-    oss << "<deferred #" << defer.id << ">";
-    return oss.str();
+    return defer.collection->get_name(defer.id);
 }
 
 inline std::string to_string(const LiteralType& literal) {
@@ -736,7 +743,11 @@ AssignResult is_assignable(const SumType& lsum, const RHS& rhs) {
 
 template <typename RHS>
 AssignResult is_assignable(const DeferredType& ldefer, const RHS& rhs) {
-    return is_assignable(ldefer.collection->get(ldefer.id), rhs);
+    auto r = is_assignable(ldefer.collection->get(ldefer.id), rhs);
+    if (!r.yes) {
+        r.messages.push_back("Cannot assign `" + to_string(rhs) + "` to `" + to_string(ldefer) + "`");
+    }
+    return r;
 }
 
 inline AssignResult is_assignable(const LuaType& llua, const LuaType& rlua) {
