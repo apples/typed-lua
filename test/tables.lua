@@ -5,6 +5,11 @@ local a: { [number]:any }
 
 t = a
 
+t['horse'] = 34
+t['horse'] = true
+t[13] = 7
+a[13] = 7
+
 interface StrMap: {
     [string]: number
 }

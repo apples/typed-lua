@@ -442,10 +442,32 @@ public:
         subscript(std::move(s)) {}
     std::unique_ptr<NExpr> prefix;
     std::unique_ptr<NExpr> subscript;
+    mutable std::optional<Type> cached_type;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         prefix->check(parent_scope, errors);
         subscript->check(parent_scope, errors);
+
+        auto prefixtype = prefix->get_type(parent_scope);
+        auto keytype = subscript->get_type(parent_scope);
+
+        std::vector<std::string> notes;
+
+        auto result = get_index_type(prefixtype, keytype, notes);
+
+        if (!result) {
+            notes.push_back("Could not find index `" + to_string(keytype) + "` in `" + to_string(prefixtype) + "`");
+        }
+
+        if (!notes.empty()) {
+            std::string msg;
+            for (const auto& note : notes) {
+                msg = note + "\n" + msg;
+            }
+            errors.emplace_back(msg, location);
+        }
+
+        cached_type = std::move(result);
     }
 
     virtual void dump(std::ostream& out) const override {
@@ -453,7 +475,11 @@ public:
     }
 
     virtual Type get_type(const Scope& scope) const override {
-        return Type::make_any();
+        if (cached_type) {
+            return *cached_type;
+        } else {
+            return Type::make_any();
+        }
     }
 };
 
