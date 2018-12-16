@@ -1686,23 +1686,75 @@ public:
 
 class NUnaryop : public NExpr {
 public:
+    enum class Op {
+        NOT,
+        LEN,
+        NEG,
+        BNOT
+    };
+
     NUnaryop() = default;
-    NUnaryop(std::string o, std::unique_ptr<NExpr> e) :
-        opname(std::move(o)),
+    NUnaryop(Op o, std::unique_ptr<NExpr> e) :
+        op(o),
         expr(std::move(e)) {}
-    std::string opname;
+    Op op;
     std::unique_ptr<NExpr> expr;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         expr->check(parent_scope, errors);
+
+        auto type = expr->get_type(parent_scope);
+
+        auto require_len = [&]{
+            auto str = Type::make_luatype(LuaType::STRING);
+            auto tab = Type::make_table({{Type::make_luatype(LuaType::NUMBER), Type::make_any()}}, {});
+            auto r = is_assignable(str | tab, type);
+
+            if (!r.yes) {
+                r.messages.push_back("In length operator");
+                errors.emplace_back(to_string(r), location);
+            }
+        };
+
+        auto require_number = [&]{
+            auto num = Type::make_luatype(LuaType::NUMBER);
+            auto r = is_assignable(num, type);
+
+            if (!r.yes) {
+                r.messages.push_back("In unary operator");
+                errors.emplace_back(to_string(r), location);
+            }
+        };
+
+        switch (op) {
+            case Op::NOT: break;
+            case Op::LEN: require_len(); break;
+            case Op::NEG: require_number(); break;
+            case Op::BNOT: require_number(); break;
+            default: throw std::logic_error("Invalid unary operator");
+        }
     }
 
     virtual void dump(std::ostream& out) const override {
-        out << "(" << opname << " " << *expr << ")";
+        out << "(";
+        switch (op) {
+            case Op::NOT: out << "not"; break;
+            case Op::LEN: out << "#"; break;
+            case Op::NEG: out << "-"; break;
+            case Op::BNOT: out << "~"; break;
+            default: throw std::logic_error("Invalid unary operator");
+        }
+        out << " " << *expr << ")";
     }
 
     virtual Type get_type(const Scope& scope) const override {
-        return Type::make_any();
+        switch (op) {
+            case Op::NOT: return Type::make_luatype(LuaType::BOOLEAN);
+            case Op::LEN: return Type::make_luatype(LuaType::NUMBER);
+            case Op::NEG: return Type::make_luatype(LuaType::NUMBER);
+            case Op::BNOT: return Type::make_luatype(LuaType::NUMBER);
+            default: throw std::logic_error("Invalid unary operator");
+        }
     }
 };
 

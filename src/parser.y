@@ -63,8 +63,8 @@
     #define BINOP(OBJ, OP, LEFT, RIGHT, LOC) \
         OBJ = new NBinop(NBinop::Op::OP, ptr(LEFT), ptr(RIGHT)); \
         OBJ->location = LOC;
-    #define UNARYOP(OBJ, NAME, EXPR, LOC) \
-        OBJ = new NUnaryop(NAME, ptr(EXPR)); \
+    #define UNARYOP(OBJ, OP, EXPR, LOC) \
+        OBJ = new NUnaryop(NUnaryop::Op::OP, ptr(EXPR)); \
         OBJ->location = LOC;
 }
 
@@ -426,10 +426,10 @@ binopcall: expr[l] TOR expr[r] { BINOP($$, OR, $l, $r, @$) }
          | expr[l] '^' expr[r] { BINOP($$, POW, $l, $r, @$) }
          ;
 
-unaryopcall: TNOT expr { UNARYOP($$, "not", $expr, @$) }
-           | '#' expr { UNARYOP($$, "#", $expr, @$) }
-           | '-' expr %prec NEG { UNARYOP($$, "-", $expr, @$) }
-           | '~' expr %prec BNOT { UNARYOP($$, "~", $expr, @$) }
+unaryopcall: TNOT expr { UNARYOP($$, NOT, $expr, @$) }
+           | '#' expr { UNARYOP($$, LEN, $expr, @$) }
+           | '-' expr %prec NEG { UNARYOP($$, NEG, $expr, @$) }
+           | '~' expr %prec BNOT { UNARYOP($$, BNOT, $expr, @$) }
            ;
 
 globalvar: TGLOBAL namelist {
