@@ -528,7 +528,6 @@ inline AssignResult is_assignable(const TupleType& ltuple, const TupleType& rtup
 
 inline AssignResult is_assignable(const TableType& ltable, const TableType& rtable) {
     for (const auto& lindex : ltable.indexes) {
-        bool found = false;
         for (const auto& rindex : rtable.indexes) {
             if (is_assignable(rindex.key, lindex.key).yes) {
                 auto r = is_assignable(lindex.val, rindex.val);
@@ -536,17 +535,42 @@ inline AssignResult is_assignable(const TableType& ltable, const TableType& rtab
                     r.messages.push_back("When checking index `" + to_string(lindex) + "` against `" + to_string(rindex) + "`");
                     return r;
                 }
+            }
+        }
+
+        if (is_assignable(lindex.key, LuaType::STRING).yes) {
+            for (const auto& rfield : rtable.fields) {
+                auto r = is_assignable(lindex.val, rfield.type);
+                if (!r.yes) {
+                    r.messages.push_back("When checking table index `" + to_string(lindex) + "` against field `" + rfield.name + "`");
+                    return r;
+                }
+            }
+        }
+    }
+
+    for (const auto& lfield : ltable.fields) {
+        bool found = false;
+        for (const auto& rfield : rtable.fields) {
+            if (lfield.name == rfield.name) {
+                auto r = is_assignable(lfield.type, rfield.type);
+                if (!r.yes) {
+                    r.messages.push_back("At field '" + lfield.name + "`");
+                    return r;
+                }
                 found = true;
+                break;
             }
         }
         if (!found) {
-            auto r = is_assignable(lindex.val, LuaType::NIL);
+            auto r = is_assignable(lfield.type, LuaType::NIL);
             if (!r.yes) {
-                r.messages.push_back("At table index `" + to_string(lindex) + "`");
+                r.messages.push_back("Field '" + lfield.name + "' is missing in right-hand side");
                 return r;
             }
         }
     }
+
     return true;
 }
 

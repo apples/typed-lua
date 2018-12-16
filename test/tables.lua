@@ -19,3 +19,5 @@ interface Point2D: {
 local d: Point2D = 42
 
 d = { x=33, y=999 }
+d = 42
+d = { x=13 }
