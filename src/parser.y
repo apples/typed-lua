@@ -274,11 +274,20 @@ unittype: commonunittype { $$ = $1; }
         ;
 
 functype: '(' ')' ':' rettype[ret] {
-            $$ = new NTypeFunction({}, std::unique_ptr<NType>($ret));
+            $$ = new NTypeFunction({}, std::unique_ptr<NType>($ret), false);
             $$->location = @$;
         }
         | '(' typefuncparams ')' ':' rettype[ret] {
-            $$ = new NTypeFunction(std::move(*$typefuncparams), ptr($ret));
+            $$ = new NTypeFunction(std::move(*$typefuncparams), ptr($ret), false);
+            $$->location = @$;
+            delete $typefuncparams;
+        }
+        | '(' TDOT3 ')' ':' rettype[ret] {
+            $$ = new NTypeFunction({}, std::unique_ptr<NType>($ret), true);
+            $$->location = @$;
+        }
+        | '(' typefuncparams ',' TDOT3 ')' ':' rettype[ret] {
+            $$ = new NTypeFunction(std::move(*$typefuncparams), ptr($ret), true);
             $$->location = @$;
             delete $typefuncparams;
         }

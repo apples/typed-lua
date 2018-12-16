@@ -26,15 +26,18 @@ struct FieldDecl;
 struct FunctionType {
     std::vector<Type> params;
     std::unique_ptr<Type> ret;
+    bool variadic = false;
 
     FunctionType() = default;
-    FunctionType(std::vector<Type> params, std::unique_ptr<Type> ret) :
+    FunctionType(std::vector<Type> params, std::unique_ptr<Type> ret, bool v) :
         params(std::move(params)),
-        ret(std::move(ret)) {}
+        ret(std::move(ret)),
+        variadic(v) {}
     FunctionType(FunctionType&&) = default;
     FunctionType(const FunctionType& other) :
         params(other.params),
-        ret(std::make_unique<Type>(*other.ret)) {}
+        ret(std::make_unique<Type>(*other.ret)),
+        variadic(other.variadic) {}
 };
 
 struct TupleType {
@@ -197,10 +200,10 @@ public:
         return type;
     }
 
-    static Type make_function(std::vector<Type> params, Type ret) {
+    static Type make_function(std::vector<Type> params, Type ret, bool variadic) {
         auto type = Type{};
         type.tag = Tag::FUNCTION;
-        new (&type.function) FunctionType{std::move(params), std::make_unique<Type>(std::move(ret))};
+        new (&type.function) FunctionType{std::move(params), std::make_unique<Type>(std::move(ret)), variadic};
         return type;
     }
 
@@ -513,6 +516,12 @@ inline std::string to_string(const FunctionType& function) {
         }
         oss << ":" << to_string(param);
         first = false;
+    }
+    if (function.variadic) {
+        if (!first) {
+            oss << ",";
+        }
+        oss << "...";
     }
     oss << "):" << to_string(*function.ret);
     return oss.str();

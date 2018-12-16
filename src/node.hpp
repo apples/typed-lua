@@ -109,11 +109,13 @@ public:
 class NTypeFunction : public NType {
 public:
     NTypeFunction() = default;
-    NTypeFunction(std::vector<NTypeFunctionParam> p, std::unique_ptr<NType> r) :
+    NTypeFunction(std::vector<NTypeFunctionParam> p, std::unique_ptr<NType> r, bool v) :
         params(std::move(p)),
-        ret(std::move(r)) {}
+        ret(std::move(r)),
+        is_variadic(v) {}
     std::vector<NTypeFunctionParam> params;
     std::unique_ptr<NType> ret;
+    bool is_variadic;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         for (const auto& param : params) {
@@ -132,6 +134,12 @@ public:
             out << param;
             first = false;
         }
+        if (is_variadic) {
+            if (!first) {
+                out << ",";
+            }
+            out << "...";
+        }
         out << "):" << *ret;
     }
 
@@ -140,7 +148,7 @@ public:
         for (const auto& param : params) {
             paramtypes.push_back(param.type->get_type(scope));
         }
-        return Type::make_function(std::move(paramtypes), ret->get_type(scope));
+        return Type::make_function(std::move(paramtypes), ret->get_type(scope), is_variadic);
     }
 };
 
@@ -916,6 +924,12 @@ public:
         auto this_scope = Scope(&parent_scope);
         params->add_to_scope(this_scope);
 
+        if (params->is_variadic) {
+            this_scope.set_dots_type(Type::make_tuple({}, true));
+        } else {
+            this_scope.disable_dots();
+        }
+
         block->check(this_scope, errors);
     }
 
@@ -958,12 +972,24 @@ public:
             this_scope.add_name("self", std::move(self_type));
             this_scope.set_return_type(return_type);
 
+            if (params->is_variadic) {
+                this_scope.set_dots_type(Type::make_tuple({}, true));
+            } else {
+                this_scope.disable_dots();
+            }
+
             block->check(this_scope, errors);
         } else {
             auto this_scope = Scope(&parent_scope);
             params->add_to_scope(this_scope);
             this_scope.add_name("self", std::move(self_type));
             this_scope.deduce_return_type();
+
+            if (params->is_variadic) {
+                this_scope.set_dots_type(Type::make_tuple({}, true));
+            } else {
+                this_scope.disable_dots();
+            }
 
             block->check(this_scope, errors);
 
@@ -972,7 +998,7 @@ public:
             }
         }
 
-        const auto functype = Type::make_function(params->get_types(parent_scope), std::move(return_type));
+        const auto functype = Type::make_function(params->get_types(parent_scope), std::move(return_type), params->is_variadic);
 
         const auto r = is_assignable(Type::make_any(), functype);
 
@@ -1013,26 +1039,38 @@ public:
 
         if (ret) {
             auto rettype = ret->get_type(parent_scope);
-            auto functype = Type::make_function(std::move(paramtypes), rettype);
+            auto functype = Type::make_function(std::move(paramtypes), rettype, params->is_variadic);
             parent_scope.add_name(name, std::move(functype));
 
             auto this_scope = Scope(&parent_scope);
             params->add_to_scope(this_scope);
             this_scope.set_return_type(std::move(rettype));
 
+            if (params->is_variadic) {
+                this_scope.set_dots_type(Type::make_tuple({}, true));
+            } else {
+                this_scope.disable_dots();
+            }
+
             block->check(this_scope, errors);
         } else {
-            auto functype = Type::make_function(paramtypes, Type::make_any());
+            auto functype = Type::make_function(paramtypes, Type::make_any(), params->is_variadic);
             parent_scope.add_name(name, std::move(functype));
 
             auto this_scope = Scope(&parent_scope);
             params->add_to_scope(this_scope);
             this_scope.deduce_return_type();
 
+            if (params->is_variadic) {
+                this_scope.set_dots_type(Type::make_tuple({}, true));
+            } else {
+                this_scope.disable_dots();
+            }
+
             block->check(this_scope, errors);
 
             if (auto newret = this_scope.get_return_type()) {
-                auto newtype = Type::make_function(std::move(paramtypes), std::move(*newret));
+                auto newtype = Type::make_function(std::move(paramtypes), std::move(*newret), params->is_variadic);
                 parent_scope.add_name(name, std::move(newtype));
             }
         }
@@ -1297,11 +1335,23 @@ public:
             params->add_to_scope(this_scope);
             this_scope.set_return_type(std::move(rettype));
 
+            if (params->is_variadic) {
+                this_scope.set_dots_type(Type::make_tuple({}, true));
+            } else {
+                this_scope.disable_dots();
+            }
+
             block->check(this_scope, errors);
         } else {
             auto this_scope = Scope(&parent_scope);
             params->add_to_scope(this_scope);
             this_scope.deduce_return_type();
+
+            if (params->is_variadic) {
+                this_scope.set_dots_type(Type::make_tuple({}, true));
+            } else {
+                this_scope.disable_dots();
+            }
 
             block->check(this_scope, errors);
 
@@ -1330,7 +1380,7 @@ public:
             deducedret ? *deducedret :
             Type::make_any();
 
-        return Type::make_function(std::move(paramtypes), std::move(rettype));
+        return Type::make_function(std::move(paramtypes), std::move(rettype), params->is_variadic);
     }
 };
 
