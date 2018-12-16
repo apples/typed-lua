@@ -378,6 +378,8 @@ inline AssignResult is_assignable(const Type& lhs, const DeferredType& rdefer);
 inline AssignResult is_assignable(const Type& lhs, const LiteralType& rliteral);
 inline AssignResult is_assignable(const Type& lhs, const Type& rhs);
 
+inline std::optional<Type> get_field_type(const Type& table, const std::string& name, std::vector<std::string>& notes);
+
 inline Type operator|(const Type& lhs, const Type& rhs) {
     if (is_assignable(lhs, rhs).yes) {
         return lhs;
@@ -491,8 +493,62 @@ inline Type operator-(const Type& lhs, const Type& rhs) {
             break;
     }
 
-
     return lhs;
+}
+
+inline std::optional<Type> get_field_type(const TableType& table, const std::string& key, std::vector<std::string>& notes) {
+    for (const auto& field : table.fields) {
+        if (field.name == key) {
+            return field.type;
+        }
+    }
+
+    return std::nullopt;
+}
+
+inline std::optional<Type> get_field_type(const SumType& sum, const std::string& key, std::vector<std::string>& notes) {
+    std::optional<Type> rv;
+
+    for (const auto& type : sum.types) {
+        auto t = get_field_type(type, key, notes);
+        if (t) {
+            if (!rv) {
+                rv = std::move(t);
+            } else {
+                rv = *rv | *t;
+            }
+        } else {
+            notes.push_back("Cannot find field '" + key + "' in `" + to_string(type) + "`");
+        }
+    }
+
+    return rv;
+}
+
+inline std::optional<Type> get_field_type(const DeferredType& defer, const std::string& key, std::vector<std::string>& notes) {
+    return get_field_type(defer.collection->get(defer.id), key, notes);
+}
+
+inline std::optional<Type> get_field_type(const Type& type, const std::string& key, std::vector<std::string>& notes) {
+    switch (type.get_tag()) {
+        case Type::Tag::ANY: return Type::make_any();
+        case Type::Tag::SUM: return get_field_type(type.get_sum(), key, notes);
+        case Type::Tag::TABLE: return get_field_type(type.get_table(), key, notes);
+        case Type::Tag::DEFERRED: return get_field_type(type.get_deferred(), key, notes);
+        default:
+            notes.push_back("Type `" + to_string(type) + "` has no fields");
+            return std::nullopt;
+    }
+}
+
+inline std::optional<Type> get_index_type(const TableType& table, const Type& key) {
+    for (const auto& index : table.indexes) {
+        if (is_assignable(index.key, key).yes) {
+            return index.val;
+        }
+    }
+
+    return std::nullopt;
 }
 
 inline std::string to_string(const LuaType& luatype) {

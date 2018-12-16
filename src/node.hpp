@@ -465,9 +465,30 @@ public:
         name(std::move(n)) {}
     std::unique_ptr<NExpr> prefix;
     std::string name;
+    mutable std::optional<Type> cached_type;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         prefix->check(parent_scope, errors);
+
+        auto prefixtype = prefix->get_type(parent_scope);
+
+        std::vector<std::string> notes;
+
+        auto result = get_field_type(prefixtype, name, notes);
+
+        if (!result) {
+            notes.push_back("Could not find field '" + name + "' in `" + to_string(prefixtype) + "`");
+        }
+
+        if (!notes.empty()) {
+            std::string msg;
+            for (const auto& note : notes) {
+                msg = note + "\n" + msg;
+            }
+            errors.emplace_back(msg, location);
+        }
+
+        cached_type = std::move(result);
     }
 
     virtual void dump(std::ostream& out) const override {
@@ -475,7 +496,11 @@ public:
     }
 
     virtual Type get_type(const Scope& scope) const override {
-        return Type::make_any();
+        if (cached_type) {
+            return *cached_type;
+        } else {
+            return Type::make_any();
+        }
     }
 };
 
