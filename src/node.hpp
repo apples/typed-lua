@@ -37,6 +37,9 @@ inline std::ostream& operator<<(std::ostream& out, const Node& n) {
 class NExpr : public Node {
 public:
     virtual Type get_type(const Scope& scope) const = 0;
+    virtual void check_expect(Scope& parent_scope, const Type& expected, std::vector<CompileError>& errors) const {
+        check(parent_scope, errors);
+    }
 };
 
 class NBlock : public Node {
@@ -498,6 +501,49 @@ public:
 
         auto prefixtype = prefix->get_type(parent_scope);
 
+        return check_common(prefixtype, parent_scope, errors);
+    }
+
+    virtual void check_expect(Scope& parent_scope, const Type& expected, std::vector<CompileError>& errors) const {
+        prefix->check(parent_scope, errors);
+
+        auto prefixtype = prefix->get_type(parent_scope);
+
+        if (prefixtype.get_tag() == Type::Tag::DEFERRED) {
+            const auto& defer = prefixtype.get_deferred();
+
+            if (!defer.collection->is_narrowing(defer.id)) {
+                return check_common(prefixtype, parent_scope, errors);
+            }
+
+            const auto& current_type = defer.collection->get(defer.id);
+
+            if (current_type.get_tag() != Type::Tag::TABLE) {
+                return check_common(prefixtype, parent_scope, errors);
+            }
+
+            auto narrowed_type = narrow_field(current_type, name, expected);
+
+            defer.collection->set(defer.id, std::move(narrowed_type));
+        } else {
+            return check_common(prefixtype, parent_scope, errors);
+        }
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << *prefix << "." << name;
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        if (cached_type) {
+            return *cached_type;
+        } else {
+            return Type::make_any();
+        }
+    }
+
+private:
+    void check_common(const Type& prefixtype, Scope& parent_scope, std::vector<CompileError>& errors) const {
         std::vector<std::string> notes;
 
         auto result = get_field_type(prefixtype, name, notes);
@@ -515,18 +561,6 @@ public:
         }
 
         cached_type = std::move(result);
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << *prefix << "." << name;
-    }
-
-    virtual Type get_type(const Scope& scope) const override {
-        if (cached_type) {
-            return *cached_type;
-        } else {
-            return Type::make_any();
-        }
     }
 };
 
@@ -669,14 +703,19 @@ public:
         lhs.reserve(vars.size());
         rhs.reserve(exprs.size());
 
-        for (const auto& var : vars) {
-            var->check(parent_scope, errors);
-            lhs.push_back(var->get_type(parent_scope));
-        }
-
         for (const auto& expr : exprs) {
             expr->check(parent_scope, errors);
             rhs.push_back(expr->get_type(parent_scope));
+        }
+
+        for (auto i = 0u; i < vars.size(); ++i) {
+            auto& var = vars[i];
+            if (i < rhs.size()) {
+                var->check_expect(parent_scope, rhs[i], errors);
+            } else {
+                var->check(parent_scope, errors);
+            }
+            lhs.push_back(var->get_type(parent_scope));
         }
 
         const auto lhstype = Type::make_reduced_tuple(std::move(lhs));
@@ -1271,7 +1310,19 @@ public:
             if (name.type) {
                 parent_scope.add_name(name.name, name.get_type(parent_scope));
             } else if (i < exprtypes.size()) {
-                parent_scope.add_name(name.name, std::move(exprtypes[i]));
+                auto exprtype = std::move(exprtypes[i]);
+
+                if (exprtype.get_tag() == Type::Tag::TABLE) {
+                    const auto& table = exprtype.get_table();
+                    if (table.indexes.empty() && table.fields.empty()) {
+                        auto& deferred = parent_scope.get_deferred_types();
+                        auto deferred_id = deferred.reserve_narrow("@<"+name.name+">");
+                        deferred.set(deferred_id, Type::make_table({}, {}));
+                        exprtype = Type::make_deferred(deferred, deferred_id);
+                    }
+                }
+
+                parent_scope.add_name(name.name, std::move(exprtype));
             } else {
                 parent_scope.add_name(name.name, Type::make_any());
             }
@@ -1619,10 +1670,6 @@ public:
 
         for (const auto& field : fields) {
             field->add_to_table(parent_scope, indexes, fielddecls, errors);
-        }
-
-        if (indexes.empty() && fielddecls.empty()) {
-            indexes.push_back({Type::make_any(), Type::make_any()});
         }
 
         cached_type = Type::make_table(std::move(indexes), std::move(fielddecls));

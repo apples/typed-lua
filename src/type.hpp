@@ -56,7 +56,7 @@ struct TableType {
 };
 
 struct DeferredType {
-    const DeferredTypeCollection* collection;
+    DeferredTypeCollection* collection;
     int id;
 };
 
@@ -229,7 +229,7 @@ public:
         return type;
     }
 
-    static Type make_deferred(const DeferredTypeCollection& collection, int id) {
+    static Type make_deferred(DeferredTypeCollection& collection, int id) {
         auto type = Type{};
         type.tag = Tag::DEFERRED;
         new (&type.deferred) DeferredType{&collection, id};
@@ -335,6 +335,11 @@ public:
         return entries.size() - 1;
     }
 
+    int reserve_narrow(std::string name) {
+        entries.emplace_back(Entry{{}, std::move(name), true});
+        return entries.size() - 1;
+    }
+
     const Type& get(int i) const {
         return entries[i].type;
     }
@@ -347,10 +352,15 @@ public:
         entries[i].type = std::move(t);
     }
 
+    bool is_narrowing(int i) const {
+        return entries[i].narrowing;
+    }
+
 private:
     struct Entry {
         Type type;
         std::string name;
+        bool narrowing = true;
     };
 
     std::vector<Entry> entries;
@@ -394,6 +404,8 @@ inline AssignResult is_assignable(const Type& lhs, const TableType& rtable);
 inline AssignResult is_assignable(const Type& lhs, const DeferredType& rdefer);
 inline AssignResult is_assignable(const Type& lhs, const LiteralType& rliteral);
 inline AssignResult is_assignable(const Type& lhs, const Type& rhs);
+
+inline Type narrow_field(Type tabletype, const std::string& fieldname, Type fieldtype);
 
 inline std::optional<Type> get_field_type(const TableType& table, const std::string& key, std::vector<std::string>& notes);
 inline std::optional<Type> get_field_type(const SumType& sum, const std::string& key, std::vector<std::string>& notes);
@@ -522,6 +534,33 @@ inline Type operator-(const Type& lhs, const Type& rhs) {
     }
 
     return lhs;
+}
+
+inline Type narrow_field(Type tabletype, const std::string& fieldname, Type fieldtype) {
+    if (tabletype.get_tag() != Type::Tag::TABLE) {
+        throw std::logic_error("Cannot narrow table field of type `" + to_string(tabletype) + "`");
+    }
+
+    const auto& table = tabletype.get_table();
+
+    std::vector<FieldDecl> newfields;
+
+    bool found = false;
+
+    for (auto field : table.fields) {
+        if (field.name == fieldname) {
+            field.type = field.type | fieldtype;
+            found = true;
+        }
+
+        newfields.push_back(std::move(field));
+    }
+
+    if (!found) {
+        newfields.push_back(FieldDecl{fieldname, fieldtype});
+    }
+
+    return Type::make_table(table.indexes, std::move(newfields));
 }
 
 inline std::optional<Type> get_field_type(const TableType& table, const std::string& key, std::vector<std::string>& notes) {
