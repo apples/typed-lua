@@ -1063,20 +1063,46 @@ public:
     std::unique_ptr<NBlock> block;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        expr->check(parent_scope, errors);
         params->check(parent_scope, errors);
         if (ret) ret->check(parent_scope, errors);
 
-        auto this_scope = Scope(&parent_scope);
-        params->add_to_scope(this_scope);
+        auto return_type = Type::make_any();
 
-        if (params->is_variadic) {
-            this_scope.set_dots_type(Type::make_tuple({}, true));
+        if (ret) {
+            return_type = ret->get_type(parent_scope);
+
+            auto this_scope = Scope(&parent_scope);
+            params->add_to_scope(this_scope);
+            this_scope.set_return_type(return_type);
+
+            if (params->is_variadic) {
+                this_scope.set_dots_type(Type::make_tuple({}, true));
+            } else {
+                this_scope.disable_dots();
+            }
+
+            block->check(this_scope, errors);
         } else {
-            this_scope.disable_dots();
+            auto this_scope = Scope(&parent_scope);
+            params->add_to_scope(this_scope);
+            this_scope.deduce_return_type();
+
+            if (params->is_variadic) {
+                this_scope.set_dots_type(Type::make_tuple({}, true));
+            } else {
+                this_scope.disable_dots();
+            }
+
+            block->check(this_scope, errors);
+
+            if (auto newret = this_scope.get_return_type()) {
+                return_type = std::move(*newret);
+            }
         }
 
-        block->check(this_scope, errors);
+        const auto functype = Type::make_function(params->get_types(parent_scope), std::move(return_type), params->is_variadic);
+
+        expr->check_expect(parent_scope, functype, errors);
     }
 
     virtual void dump(std::ostream& out) const override {
