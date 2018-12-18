@@ -7,6 +7,7 @@
 #include <sstream>
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace typedlua {
 
@@ -319,13 +320,20 @@ private:
 };
 
 inline std::string to_string(const Type& type);
-inline std::string to_string(const LuaType& luatype);
 inline std::string to_string(const FunctionType& function);
 inline std::string to_string(const TupleType& tuple);
 inline std::string to_string(const SumType& sum);
 inline std::string to_string(const KeyValPair& kvp);
 inline std::string to_string(const TableType& table);
 inline std::string to_string(const DeferredType& defer);
+inline std::string to_string(const Type& type, std::unordered_set<int>& seen);
+inline std::string to_string(const LuaType& luatype);
+inline std::string to_string(const FunctionType& function, std::unordered_set<int>& seen);
+inline std::string to_string(const TupleType& tuple, std::unordered_set<int>& seen);
+inline std::string to_string(const SumType& sum, std::unordered_set<int>& seen);
+inline std::string to_string(const KeyValPair& kvp, std::unordered_set<int>& seen);
+inline std::string to_string(const TableType& table, std::unordered_set<int>& seen);
+inline std::string to_string(const DeferredType& defer, std::unordered_set<int>& seen);
 inline std::string to_string(const LiteralType& literal);
 
 class DeferredTypeCollection {
@@ -405,7 +413,8 @@ inline AssignResult is_assignable(const Type& lhs, const DeferredType& rdefer);
 inline AssignResult is_assignable(const Type& lhs, const LiteralType& rliteral);
 inline AssignResult is_assignable(const Type& lhs, const Type& rhs);
 
-inline Type narrow_field(Type tabletype, const std::string& fieldname, Type fieldtype);
+inline Type narrow_field(Type tabletype, const std::string& fieldname, const Type& fieldtype);
+inline Type narrow_index(Type tabletype, const Type& keytype, const Type& valtype);
 
 inline std::optional<Type> get_field_type(const TableType& table, const std::string& key, std::vector<std::string>& notes);
 inline std::optional<Type> get_field_type(const SumType& sum, const std::string& key, std::vector<std::string>& notes);
@@ -536,7 +545,7 @@ inline Type operator-(const Type& lhs, const Type& rhs) {
     return lhs;
 }
 
-inline Type narrow_field(Type tabletype, const std::string& fieldname, Type fieldtype) {
+inline Type narrow_field(Type tabletype, const std::string& fieldname, const Type& fieldtype) {
     if (tabletype.get_tag() != Type::Tag::TABLE) {
         throw std::logic_error("Cannot narrow table field of type `" + to_string(tabletype) + "`");
     }
@@ -561,6 +570,33 @@ inline Type narrow_field(Type tabletype, const std::string& fieldname, Type fiel
     }
 
     return Type::make_table(table.indexes, std::move(newfields));
+}
+
+inline Type narrow_index(Type tabletype, const Type& keytype, const Type& valtype) {
+    if (tabletype.get_tag() != Type::Tag::TABLE) {
+        throw std::logic_error("Cannot narrow table field of type `" + to_string(tabletype) + "`");
+    }
+
+    const auto& table = tabletype.get_table();
+
+    std::vector<KeyValPair> newindexes;
+
+    bool found = false;
+
+    for (auto index : table.indexes) {
+        if (is_assignable(index.key, keytype).yes) {
+            index.val = index.val | valtype;
+            found = true;
+        }
+
+        newindexes.push_back(std::move(index));
+    }
+
+    if (!found) {
+        newindexes.push_back({keytype, valtype});
+    }
+
+    return Type::make_table(std::move(newindexes), table.fields);
 }
 
 inline std::optional<Type> get_field_type(const TableType& table, const std::string& key, std::vector<std::string>& notes) {
@@ -712,7 +748,7 @@ inline std::string to_string(const LuaType& luatype) {
     }
 }
 
-inline std::string to_string(const FunctionType& function) {
+inline std::string to_string(const FunctionType& function, std::unordered_set<int>& seen) {
     std::ostringstream oss;
     oss << "(";
     bool first = true;
@@ -720,7 +756,7 @@ inline std::string to_string(const FunctionType& function) {
         if (!first) {
             oss << ",";
         }
-        oss << ":" << to_string(param);
+        oss << ":" << to_string(param, seen);
         first = false;
     }
     if (function.variadic) {
@@ -729,11 +765,11 @@ inline std::string to_string(const FunctionType& function) {
         }
         oss << "...";
     }
-    oss << "):" << to_string(*function.ret);
+    oss << "):" << to_string(*function.ret, seen);
     return oss.str();
 }
 
-inline std::string to_string(const TupleType& tuple) {
+inline std::string to_string(const TupleType& tuple, std::unordered_set<int>& seen) {
     std::ostringstream oss;
     oss << "[";
     bool first = true;
@@ -741,7 +777,7 @@ inline std::string to_string(const TupleType& tuple) {
         if (!first) {
             oss << ",";
         }
-        oss << to_string(type);
+        oss << to_string(type, seen);
         first = false;
     }
     if (tuple.is_variadic) {
@@ -754,24 +790,24 @@ inline std::string to_string(const TupleType& tuple) {
     return oss.str();
 }
 
-inline std::string to_string(const SumType& sum) {
+inline std::string to_string(const SumType& sum, std::unordered_set<int>& seen) {
     std::ostringstream oss;
     bool first = true;
     for (const auto& type : sum.types) {
         if (!first) {
             oss << "|";
         }
-        oss << to_string(type);
+        oss << to_string(type, seen);
         first = false;
     }
     return oss.str();
 }
 
-inline std::string to_string(const KeyValPair& kvp) {
-    return "[" + to_string(kvp.key) + "]:" + to_string(kvp.val);
+inline std::string to_string(const KeyValPair& kvp, std::unordered_set<int>& seen) {
+    return "[" + to_string(kvp.key, seen) + "]:" + to_string(kvp.val, seen);
 }
 
-inline std::string to_string(const TableType& table) {
+inline std::string to_string(const TableType& table, std::unordered_set<int>& seen) {
     std::ostringstream oss;
     oss << "{";
     bool first = true;
@@ -786,15 +822,21 @@ inline std::string to_string(const TableType& table) {
         if (!first) {
             oss << ";";
         }
-        oss << field.name << ":" << to_string(field.type);
+        oss << field.name << ":" << to_string(field.type, seen);
         first = false;
     }
     oss << "}";
     return oss.str();
 }
 
-inline std::string to_string(const DeferredType& defer) {
-    return defer.collection->get_name(defer.id);
+inline std::string to_string(const DeferredType& defer, std::unordered_set<int>& seen) {
+    if (seen.find(defer.id) == seen.end()) {
+        seen.insert(defer.id);
+        return defer.collection->get_name(defer.id) + "=<" + to_string(defer.collection->get(defer.id), seen) + ">";
+        seen.erase(defer.id);
+    } else {
+        return defer.collection->get_name(defer.id);
+    }
 }
 
 inline std::string to_string(const LiteralType& literal) {
@@ -808,19 +850,54 @@ inline std::string to_string(const LiteralType& literal) {
     return oss.str();
 }
 
-inline std::string to_string(const Type& type) {
+inline std::string to_string(const Type& type, std::unordered_set<int>& seen) {
     switch (type.get_tag()) {
         case Type::Tag::VOID: return "void";
         case Type::Tag::ANY: return "any";
         case Type::Tag::LUATYPE: return to_string(type.get_luatype());
-        case Type::Tag::FUNCTION: return to_string(type.get_function());
-        case Type::Tag::TUPLE: return to_string(type.get_tuple());
-        case Type::Tag::SUM: return to_string(type.get_sum());
-        case Type::Tag::TABLE: return to_string(type.get_table());
-        case Type::Tag::DEFERRED: return to_string(type.get_deferred());
+        case Type::Tag::FUNCTION: return to_string(type.get_function(), seen);
+        case Type::Tag::TUPLE: return to_string(type.get_tuple(), seen);
+        case Type::Tag::SUM: return to_string(type.get_sum(), seen);
+        case Type::Tag::TABLE: return to_string(type.get_table(), seen);
+        case Type::Tag::DEFERRED: return to_string(type.get_deferred(), seen);
         case Type::Tag::LITERAL: return to_string(type.get_literal());
         default: throw std::logic_error("Tag not implemented for to_string");
     }
+}
+
+inline std::string to_string(const Type& type) {
+    std::unordered_set<int> seen;
+    return to_string(type, seen);
+}
+
+inline std::string to_string(const FunctionType& function) {
+    std::unordered_set<int> seen;
+    return to_string(function, seen);
+}
+
+inline std::string to_string(const TupleType& tuple) {
+    std::unordered_set<int> seen;
+    return to_string(tuple, seen);
+}
+
+inline std::string to_string(const SumType& sum) {
+    std::unordered_set<int> seen;
+    return to_string(sum, seen);
+}
+
+inline std::string to_string(const KeyValPair& kvp) {
+    std::unordered_set<int> seen;
+    return to_string(kvp, seen);
+}
+
+inline std::string to_string(const TableType& table) {
+    std::unordered_set<int> seen;
+    return to_string(table, seen);
+}
+
+inline std::string to_string(const DeferredType& defer) {
+    std::unordered_set<int> seen;
+    return to_string(defer, seen);
 }
 
 inline std::string to_string(const AssignResult& ar) {
@@ -847,11 +924,7 @@ AssignResult is_assignable(const SumType& lsum, const RHS& rhs) {
 
 template <typename RHS>
 AssignResult is_assignable(const DeferredType& ldefer, const RHS& rhs) {
-    auto r = is_assignable(ldefer.collection->get(ldefer.id), rhs);
-    if (!r.yes) {
-        r.messages.push_back("Cannot assign `" + to_string(rhs) + "` to `" + to_string(ldefer) + "`");
-    }
-    return r;
+    return is_assignable(ldefer.collection->get(ldefer.id), rhs);
 }
 
 inline AssignResult is_assignable(const LuaType& llua, const LuaType& rlua) {

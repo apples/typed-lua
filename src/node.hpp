@@ -454,6 +454,51 @@ public:
         auto prefixtype = prefix->get_type(parent_scope);
         auto keytype = subscript->get_type(parent_scope);
 
+        check_common(prefixtype, keytype, parent_scope, errors);
+    }
+
+    virtual void check_expect(Scope& parent_scope, const Type& expected, std::vector<CompileError>& errors) const {
+        prefix->check(parent_scope, errors);
+        subscript->check(parent_scope, errors);
+
+        auto prefixtype = prefix->get_type(parent_scope);
+        auto keytype = subscript->get_type(parent_scope);
+
+        if (prefixtype.get_tag() == Type::Tag::DEFERRED) {
+            const auto& defer = prefixtype.get_deferred();
+
+            if (!defer.collection->is_narrowing(defer.id)) {
+                return check_common(prefixtype, keytype, parent_scope, errors);
+            }
+
+            const auto& current_type = defer.collection->get(defer.id);
+
+            if (current_type.get_tag() != Type::Tag::TABLE) {
+                return check_common(prefixtype, keytype, parent_scope, errors);
+            }
+
+            auto narrowed_type = narrow_index(current_type, keytype, expected);
+
+            defer.collection->set(defer.id, std::move(narrowed_type));
+        } else {
+            return check_common(prefixtype, keytype, parent_scope, errors);
+        }
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << *prefix << "[" << *subscript << "]";
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        if (cached_type) {
+            return *cached_type;
+        } else {
+            return Type::make_any();
+        }
+    }
+
+private:
+    void check_common(const Type& prefixtype, const Type& keytype, Scope& parent_scope, std::vector<CompileError>& errors) const {
         std::vector<std::string> notes;
 
         auto result = get_index_type(prefixtype, keytype, notes);
@@ -471,18 +516,6 @@ public:
         }
 
         cached_type = std::move(result);
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << *prefix << "[" << *subscript << "]";
-    }
-
-    virtual Type get_type(const Scope& scope) const override {
-        if (cached_type) {
-            return *cached_type;
-        } else {
-            return Type::make_any();
-        }
     }
 };
 
@@ -1370,19 +1403,8 @@ public:
             if (name.type) {
                 parent_scope.add_name(name.name, name.get_type(parent_scope));
             } else if (i < exprtypes.size()) {
-                auto exprtype = std::move(exprtypes[i]);
 
-                if (exprtype.get_tag() == Type::Tag::TABLE) {
-                    const auto& table = exprtype.get_table();
-                    if (table.indexes.empty() && table.fields.empty()) {
-                        auto& deferred = parent_scope.get_deferred_types();
-                        auto deferred_id = deferred.reserve_narrow("@<"+name.name+">");
-                        deferred.set(deferred_id, Type::make_table({}, {}));
-                        exprtype = Type::make_deferred(deferred, deferred_id);
-                    }
-                }
-
-                parent_scope.add_name(name.name, std::move(exprtype));
+                parent_scope.add_name(name.name, std::move(exprtypes[i]));
             } else {
                 parent_scope.add_name(name.name, Type::make_any());
             }
@@ -1732,7 +1754,14 @@ public:
             field->add_to_table(parent_scope, indexes, fielddecls, errors);
         }
 
-        cached_type = Type::make_table(std::move(indexes), std::move(fielddecls));
+        if (indexes.empty() && fields.empty()) {
+            auto& deferred = parent_scope.get_deferred_types();
+            auto deferred_id = deferred.reserve_narrow("@<"+std::to_string(location.last_line)+">");
+            deferred.set(deferred_id, Type::make_table({}, {}));
+            cached_type = Type::make_deferred(deferred, deferred_id);
+        } else {
+            cached_type = Type::make_table(std::move(indexes), std::move(fielddecls));
+        }
     }
 
     virtual void dump(std::ostream& out) const override {
