@@ -593,7 +593,11 @@ inline std::optional<Type> get_field_type(const SumType& sum, const std::string&
 }
 
 inline std::optional<Type> get_field_type(const DeferredType& defer, const std::string& key, std::vector<std::string>& notes) {
-    return get_field_type(defer.collection->get(defer.id), key, notes);
+    auto r = get_field_type(defer.collection->get(defer.id), key, notes);
+    if (!notes.empty()) {
+        notes.push_back("In deferred type '" + defer.collection->get_name(defer.id) + "'");
+    }
+    return r;
 }
 
 inline std::optional<Type> get_field_type(const Type& type, const std::string& key, std::vector<std::string>& notes) {

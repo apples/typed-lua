@@ -1104,18 +1104,21 @@ public:
     std::unique_ptr<NBlock> block;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        expr->check(parent_scope, errors);
         params->check(parent_scope, errors);
         if (ret) ret->check(parent_scope, errors);
 
-        auto self_type = expr->get_type(parent_scope);
+        const auto self_type = expr->get_type(parent_scope);
         auto return_type = Type::make_any();
+        auto param_types = params->get_types(parent_scope);
+        param_types.insert(param_types.begin(), self_type);
 
         if (ret) {
             return_type = ret->get_type(parent_scope);
 
             auto this_scope = Scope(&parent_scope);
             params->add_to_scope(this_scope);
-            this_scope.add_name("self", std::move(self_type));
+            this_scope.add_name("self", self_type);
             this_scope.set_return_type(return_type);
 
             if (params->is_variadic) {
@@ -1128,7 +1131,7 @@ public:
         } else {
             auto this_scope = Scope(&parent_scope);
             params->add_to_scope(this_scope);
-            this_scope.add_name("self", std::move(self_type));
+            this_scope.add_name("self", self_type);
             this_scope.deduce_return_type();
 
             if (params->is_variadic) {
@@ -1144,14 +1147,45 @@ public:
             }
         }
 
-        const auto functype = Type::make_function(params->get_types(parent_scope), std::move(return_type), params->is_variadic);
+        const auto functype = Type::make_function(param_types, std::move(return_type), params->is_variadic);
 
-        const auto r = is_assignable(Type::make_any(), functype);
+        if (self_type.get_tag() == Type::Tag::DEFERRED) {
+            const auto& defer = self_type.get_deferred();
 
-        if (!r.yes) {
-            errors.emplace_back(to_string(r), location);
-        } else if (!r.messages.empty()) {
-            errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
+            if (defer.collection->is_narrowing(defer.id)) {
+                const auto& current_type = defer.collection->get(defer.id);
+
+                if (current_type.get_tag() == Type::Tag::TABLE) {
+                    auto narrowed_type = narrow_field(current_type, name, functype);
+
+                    defer.collection->set(defer.id, std::move(narrowed_type));
+                }
+            }
+        }
+
+        std::vector<std::string> notes;
+
+        auto fieldtype = get_field_type(self_type, name, notes);
+
+        if (fieldtype) {
+            const auto r = is_assignable(*fieldtype, functype);
+
+            if (!r.yes) {
+                errors.emplace_back(to_string(r), location);
+            } else if (!r.messages.empty()) {
+                errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
+            }
+        } else {
+            if (!notes.empty()) {
+                std::string msg;
+                
+                for (const auto& note : notes) {
+                    msg = note + "\n" + msg;
+                }
+
+                msg = "Failed to deduce field type\n" + msg;
+                errors.emplace_back(msg, location);
+            }
         }
     }
 
