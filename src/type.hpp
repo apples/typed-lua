@@ -395,8 +395,17 @@ inline AssignResult is_assignable(const Type& lhs, const DeferredType& rdefer);
 inline AssignResult is_assignable(const Type& lhs, const LiteralType& rliteral);
 inline AssignResult is_assignable(const Type& lhs, const Type& rhs);
 
-inline std::optional<Type> get_field_type(const Type& table, const std::string& name, std::vector<std::string>& notes);
+inline std::optional<Type> get_field_type(const TableType& table, const std::string& key, std::vector<std::string>& notes);
+inline std::optional<Type> get_field_type(const SumType& sum, const std::string& key, std::vector<std::string>& notes);
+inline std::optional<Type> get_field_type(const DeferredType& defer, const std::string& key, std::vector<std::string>& notes);
+inline std::optional<Type> get_field_type(const Type& type, const std::string& key, std::vector<std::string>& notes);
+
+inline std::optional<Type> get_index_type(const TableType& table, const Type& key, std::vector<std::string>& notes);
+inline std::optional<Type> get_index_type(const SumType& sum, const Type& key, std::vector<std::string>& notes);
+inline std::optional<Type> get_index_type(const DeferredType& defer, const Type& key, std::vector<std::string>& notes);
 inline std::optional<Type> get_index_type(const Type& type, const Type& key, std::vector<std::string>& notes);
+
+inline std::optional<Type> get_return_type(const FunctionType& func, std::vector<std::string>& notes);
 inline std::optional<Type> get_return_type(const Type& type, std::vector<std::string>& notes);
 
 inline Type operator|(const Type& lhs, const Type& rhs) {
@@ -522,7 +531,7 @@ inline std::optional<Type> get_field_type(const TableType& table, const std::str
         }
     }
 
-    return std::nullopt;
+    return get_index_type(table, Type::make_luatype(LuaType::STRING), notes);
 }
 
 inline std::optional<Type> get_field_type(const SumType& sum, const std::string& key, std::vector<std::string>& notes) {
