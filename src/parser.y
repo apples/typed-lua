@@ -8,7 +8,7 @@
 // but due to a circular dependency, this seems impossible.
 %define api.pure full
 %lex-param {yyscan_t scanner}
-%parse-param {void* scanner} {typedlua::ast::Node*& root}
+%parse-param {void* scanner} {std::unique_ptr<typedlua::ast::Node>& root}
 
 %locations
 
@@ -50,7 +50,7 @@
 
     using namespace typedlua::ast;
 
-    static void yyerror(YYLTYPE* loc, void* scanner, Node* root, const char *s) {
+    static void yyerror(YYLTYPE* loc, void* scanner, std::unique_ptr<Node>& root, const char *s) {
         std::cerr << "ERROR: " << s << "\n";
         std::cerr << "  Line: " << loc->first_line << std::endl;
     }
@@ -140,7 +140,7 @@
 
 %%
 
-chunk: block { root = $1; }
+chunk: block { root = ptr($1); }
      ;
 
 block: statseq { $$ = $1; }

@@ -2,41 +2,49 @@
 
 #include "parser.hpp"
 #include "lexer.hpp"
+#include "node.hpp"
 
 #include <sstream>
 
 namespace typedlua {
 
-Compiler::Compiler() {}
-
-Compiler::Compiler(Scope& global_scope) : global_scope(&global_scope) {}
-
-auto Compiler::compile(std::string_view source, std::string_view name) -> Result {
+std::unique_ptr<ast::Node> parse(std::string_view source) {
     yyscan_t scanner;
+
     typedlualex_init(&scanner);
+    
     auto buffer = typedlua_scan_bytes(source.data(), source.length(), scanner);
+    
     typedluaset_lineno(1, scanner);
     
-    typedlua::ast::Node* root = nullptr;
+    auto root = std::unique_ptr<ast::Node>{};
 
-    std::ostringstream oss;
-    auto rv = Result{};
-
-    if (typedluaparse(scanner, root) == 0 && root) {
-        auto scope = Scope(global_scope);
-        scope.deduce_return_type();
-        std::vector<CompileError> errors;
-        root->check(scope, errors);
-        oss << *root << std::endl;
-
-        rv.new_source = oss.str();
-        rv.errors = std::move(errors);
+    if (typedluaparse(scanner, root) != 0) {
+        root = nullptr;
     }
 
     typedlua_delete_buffer(buffer, scanner);
     typedlualex_destroy(scanner);
 
-    return rv;
+    return root;
+}
+
+std::vector<CompileError> check(const ast::Node& root, Scope& global_scope) {
+    auto scope = Scope(global_scope);
+    auto errors = std::vector<CompileError>{};
+
+    scope.deduce_return_type();
+    root.check(scope, errors);
+
+    return errors;
+}
+
+std::string compile(const ast::Node& root) {
+    auto oss = std::ostringstream{};
+
+    oss << root << std::endl;
+
+    return oss.str();
 }
 
 } // namespace typedlua
