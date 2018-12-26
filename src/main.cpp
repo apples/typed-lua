@@ -4,7 +4,6 @@
 #include "typedlua_compiler.hpp"
 
 int main(int argc, char **argv) {
-    
     auto ss = std::stringstream{};
 
     ss << std::cin.rdbuf();

@@ -1756,7 +1756,7 @@ public:
 
         if (indexes.empty() && fields.empty()) {
             auto& deferred = parent_scope.get_deferred_types();
-            auto deferred_id = deferred.reserve_narrow("@<"+std::to_string(location.last_line)+">");
+            auto deferred_id = deferred.reserve_narrow("@"+std::to_string(location.last_line));
             deferred.set(deferred_id, Type::make_table({}, {}));
             cached_type = Type::make_deferred(deferred, deferred_id);
         } else {

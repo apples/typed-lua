@@ -16,6 +16,8 @@ add_executable(typedlua
     ${FLEX_lexer_OUTPUTS}
     src/main.cpp
     src/node.hpp
+    src/type.hpp
+    src/type.cpp
     src/typedlua_compiler.cpp
     src/typedlua_compiler.hpp)
 set_target_properties(typedlua PROPERTIES CXX_STANDARD 17)
