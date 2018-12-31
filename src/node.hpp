@@ -657,6 +657,34 @@ public:
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         prefix->check(parent_scope, errors);
         if (args) args->check(parent_scope, errors);
+
+        auto prefixtype = prefix->get_type(parent_scope);
+
+        if (auto tag = prefixtype.get_tag();
+            tag != Type::Tag::FUNCTION && tag != Type::Tag::ANY) {
+            errors.emplace_back("Cannot call non-function type `" + to_string(prefixtype) + "`", location);
+            return;
+        }
+
+        const auto& func = prefixtype.get_function();
+
+        auto rhs = std::vector<Type>{};
+
+        rhs.reserve(args->args.size());
+
+        for (const auto& expr : args->args) {
+            rhs.push_back(expr->get_type(parent_scope));
+        }
+
+        const auto lhstype = Type::make_tuple(func.params, func.variadic);
+        const auto rhstype = Type::make_tuple(std::move(rhs), false);
+        const auto r = is_assignable(lhstype, rhstype);
+
+        if (!r.yes) {
+            errors.emplace_back(to_string(r), location);
+        } else if (!r.messages.empty()) {
+            errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
+        }
     }
 
     virtual void dump(std::ostream& out) const override {
