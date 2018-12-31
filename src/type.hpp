@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
+#include <optional>
 
 namespace typedlua {
 
@@ -928,20 +929,13 @@ inline AssignResult is_assignable(const LiteralType& lliteral, const LiteralType
     if (lliteral.underlying_type == rliteral.underlying_type) {
         switch (lliteral.underlying_type) {
             case LuaType::BOOLEAN:
-                if (lliteral.boolean == rliteral.boolean) {
-                    return true;
-                }
-                break;
+                return lliteral.boolean == rliteral.boolean;
             case LuaType::NUMBER:
-                if (lliteral.number == rliteral.number) {
-                    return true;
-                }
-                break;
+                return lliteral.number == rliteral.number;
             case LuaType::STRING:
-                if (lliteral.string == rliteral.string) {
-                    return true;
-                }
-                break;
+                return lliteral.string == rliteral.string;
+            default:
+                throw std::logic_error("Unsupported literal type");
         }
     }
 

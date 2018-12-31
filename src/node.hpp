@@ -418,9 +418,27 @@ public:
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         if (!parent_scope.get_type_of(name)) {
-            errors.emplace_back("Name `" + name + "` is not in scope", location);
-            // Prevent further type errors for this name
-            parent_scope.add_name(name, Type::make_any());
+            fail_common(parent_scope, errors);
+        }
+    }
+
+    virtual void check_expect(Scope& parent_scope, const Type& expected, std::vector<CompileError>& errors) const {
+        if (auto type = parent_scope.get_type_of(name)) {
+            if (type->get_tag() == Type::Tag::DEFERRED) {
+                const auto& defer = type->get_deferred();
+
+                if (!defer.collection->is_narrowing(defer.id)) {
+                    return;
+                }
+
+                const auto& current_type = defer.collection->get(defer.id);
+
+                auto narrowed_type = current_type | expected;
+
+                defer.collection->set(defer.id, std::move(narrowed_type));
+            }
+        } else {
+            fail_common(parent_scope, errors);
         }
     }
 
@@ -434,6 +452,13 @@ public:
         } else {
             return Type::make_any();
         }
+    }
+
+private:
+    void fail_common(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        errors.emplace_back("Name `" + name + "` is not in scope", location);
+        // Prevent further type errors for this name
+        parent_scope.add_name(name, Type::make_any());
     }
 };
 
@@ -1416,8 +1441,14 @@ public:
             if (name.type) {
                 parent_scope.add_name(name.name, name.get_type(parent_scope));
             } else if (i < exprtypes.size()) {
-
-                parent_scope.add_name(name.name, std::move(exprtypes[i]));
+                auto& exprtype = exprtypes[i];
+                if (exprtype.get_tag() == Type::Tag::LITERAL) {
+                    auto& collection = parent_scope.get_deferred_types();
+                    auto id = collection.reserve_narrow("@"+std::to_string(location.first_line));
+                    collection.set(id, std::move(exprtype));
+                    exprtype = Type::make_deferred(collection, id);
+                }
+                parent_scope.add_name(name.name, std::move(exprtype));
             } else {
                 parent_scope.add_name(name.name, Type::make_any());
             }
