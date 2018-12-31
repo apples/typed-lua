@@ -29,11 +29,9 @@ std::unique_ptr<ast::Node> parse(std::string_view source) {
     return root;
 }
 
-std::vector<CompileError> check(const ast::Node& root, Scope& global_scope) {
-    auto scope = Scope(global_scope);
+std::vector<CompileError> check(const ast::Node& root, Scope& scope) {
     auto errors = std::vector<CompileError>{};
 
-    scope.deduce_return_type();
     root.check(scope, errors);
 
     return errors;

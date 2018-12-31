@@ -1607,7 +1607,7 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         if (exprs.empty()) {
-            out << "--[[global ";
+            out << "--[=[global ";
             bool first = true;
             for (const auto& name : names) {
                 if (!first) {
@@ -1616,7 +1616,7 @@ public:
                 out << name;
                 first = false;
             }
-            out << "]]";
+            out << "]=]";
         } else {
             out << "--[[global]] ";
             bool first = true;
