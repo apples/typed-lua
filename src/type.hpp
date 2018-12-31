@@ -12,6 +12,8 @@
 
 namespace typedlua {
 
+std::string normalize_quotes(std::string_view s);
+
 enum class LuaType {
     NIL,
     NUMBER,
@@ -72,6 +74,32 @@ struct NumberRep {
     NumberRep() = default;
     NumberRep(double f) : is_integer(false), floating(f) {}
     NumberRep(std::int64_t i) : is_integer(true), integer(i) {}
+
+    NumberRep(const std::string& str) {
+        {
+            std::size_t pos;
+            auto i = std::stoll(str, &pos);
+
+            if (pos == str.size()) {
+                is_integer = true;
+                integer = i;
+                return;
+            }
+        }
+
+        {
+            std::size_t pos;
+            auto f = std::stod(str, &pos);
+
+            if (pos == str.size()) {
+                is_integer = false;
+                floating = f;
+                return;
+            }
+        }
+
+        throw std::logic_error("Invalid number representation");
+    }
 };
 
 inline bool operator==(const NumberRep& lhs, const NumberRep& rhs) {
@@ -96,8 +124,7 @@ struct LiteralType {
 
     LiteralType() : underlying_type(LuaType::NIL) {}
     LiteralType(bool b) : underlying_type(LuaType::BOOLEAN), boolean(b) {}
-    LiteralType(double n) : underlying_type(LuaType::NUMBER), number(n) {}
-    LiteralType(std::int64_t n) : underlying_type(LuaType::NUMBER), number(n) {}
+    LiteralType(const NumberRep& n) : underlying_type(LuaType::NUMBER), number(n) {}
     LiteralType(std::string s) : underlying_type(LuaType::STRING), string(std::move(s)) {}
 
     LiteralType(LiteralType&& other) :
@@ -387,7 +414,7 @@ private:
     struct Entry {
         Type type;
         std::string name;
-        bool narrowing = true;
+        bool narrowing = false;
     };
 
     std::vector<Entry> entries;

@@ -129,7 +129,7 @@
 %type <params> funcparams
 %type <namedecls> namelist
 %type <type> commonunittype unittype type typetuple idtype tabletype
-%type <type> funcret rettype functype retunittype
+%type <type> funcret rettype functype retunittype literaltype
 %type <typefuncparams> typefuncparams
 %type <index> index
 %type <indexlist> indexes tableindexes
@@ -264,6 +264,7 @@ idtype: TIDENTIFIER {
 commonunittype: idtype { $$ = $1; }
               | '(' type ')' { $$ = $2; $$->location = @$; }
               | tabletype { $$ = $1; }
+              | literaltype { $$ = $1; }
               ;
 
 unittype: commonunittype { $$ = $1; }
@@ -272,6 +273,20 @@ unittype: commonunittype { $$ = $1; }
             $$->location = @$;
         }
         ;
+
+literaltype: TFALSE { $$ = new NTypeLiteralBoolean(false); $$->location = @$; }
+           | TTRUE { $$ = new NTypeLiteralBoolean(true); $$->location = @$; }
+           | TNUMBER {
+               $$ = new NTypeLiteralNumber(*$1);
+               $$->location = @$;
+               delete $1;
+           }
+           | TSTRING {
+               $$ = new NTypeLiteralString(*$1);
+               $$->location = @$;
+               delete $1;
+           }
+           ;
 
 functype: '(' ')' ':' rettype[ret] {
             $$ = new NTypeFunction({}, std::unique_ptr<NType>($ret), false);

@@ -165,6 +165,61 @@ std::string to_string_impl(const T& type) {
 
 } // static
 
+std::string normalize_quotes(std::string_view value) {
+    auto str = std::string{};
+    auto escape_quotes = value[0] == '"';
+
+    str.reserve(value.size() - 2);
+
+    for (auto i = 1u; i < value.size() - 1; ++i) {
+        auto c = value[i];
+        if (escape_quotes) {
+            switch (c) {
+                case '\'':
+                    str += "\\'";
+                    break;
+                case '\\':
+                    ++i;
+                    c = value[i];
+                    switch (c) {
+                        case '"':
+                            str += '"';
+                            break;
+                        default:
+                            str += '\\';
+                            str += c;
+                            break;
+                    }
+                    break;
+                default:
+                    str += c;
+                    break;
+            }
+        } else {
+            switch (c) {
+                case '\\':
+                    ++i;
+                    c = value[i];
+                    switch (c) {
+                        case '"':
+                            str += c;
+                            break;
+                        default:
+                            str += '\\';
+                            str += c;
+                            break;
+                    }
+                    break;
+                default:
+                    str += c;
+                    break;
+            }
+        }
+    }
+
+    return str;
+}
+
 std::string to_string(const Type& type) {
     return to_string_impl(type);
 }

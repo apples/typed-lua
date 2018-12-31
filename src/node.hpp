@@ -358,6 +358,51 @@ public:
     }
 };
 
+class NTypeLiteralBoolean : public NType {
+public:
+    NTypeLiteralBoolean() = default;
+    NTypeLiteralBoolean(bool v) : value(v) {}
+    bool value;
+
+    virtual void dump(std::ostream& out) const override {
+        out << (value ? "true" : "false");
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return Type::make_literal(value);
+    }
+};
+
+class NTypeLiteralNumber : public NType {
+public:
+    NTypeLiteralNumber() = default;
+    NTypeLiteralNumber(const std::string& s) : value(s) {}
+    NumberRep value;
+
+    virtual void dump(std::ostream& out) const override {
+        out << (value.is_integer ? value.integer : value.floating);
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return Type::make_literal(value);
+    }
+};
+
+class NTypeLiteralString : public NType {
+public:
+    NTypeLiteralString() = default;
+    NTypeLiteralString(std::string_view s) : value(normalize_quotes(s)) {}
+    std::string value;
+
+    virtual void dump(std::ostream& out) const override {
+        out << "'" << value << "'";
+    }
+
+    virtual Type get_type(const Scope& scope) const override {
+        return Type::make_literal(value);
+    }
+};
+
 class NInterface : public Node {
 public:
     NInterface() = default;
@@ -660,30 +705,35 @@ public:
 
         auto prefixtype = prefix->get_type(parent_scope);
 
-        if (auto tag = prefixtype.get_tag();
-            tag != Type::Tag::FUNCTION && tag != Type::Tag::ANY) {
-            errors.emplace_back("Cannot call non-function type `" + to_string(prefixtype) + "`", location);
-            return;
-        }
+        switch (prefixtype.get_tag()) {
+            case Type::Tag::ANY:
+                break;
+            case Type::Tag::FUNCTION: {
+                const auto& func = prefixtype.get_function();
 
-        const auto& func = prefixtype.get_function();
+                auto rhs = std::vector<Type>{};
 
-        auto rhs = std::vector<Type>{};
+                if (args) {
+                    rhs.reserve(args->args.size());
 
-        rhs.reserve(args->args.size());
+                    for (const auto& expr : args->args) {
+                        rhs.push_back(expr->get_type(parent_scope));
+                    }
+                }
 
-        for (const auto& expr : args->args) {
-            rhs.push_back(expr->get_type(parent_scope));
-        }
+                const auto lhstype = Type::make_tuple(func.params, func.variadic);
+                const auto rhstype = Type::make_tuple(std::move(rhs), false);
+                const auto r = is_assignable(lhstype, rhstype);
 
-        const auto lhstype = Type::make_tuple(func.params, func.variadic);
-        const auto rhstype = Type::make_tuple(std::move(rhs), false);
-        const auto r = is_assignable(lhstype, rhstype);
-
-        if (!r.yes) {
-            errors.emplace_back(to_string(r), location);
-        } else if (!r.messages.empty()) {
-            errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
+                if (!r.yes) {
+                    errors.emplace_back(to_string(r), location);
+                } else if (!r.messages.empty()) {
+                    errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
+                }
+            } break;
+            default:
+                errors.emplace_back("Cannot call non-function type `" + to_string(prefixtype) + "`", location);
+                break;
         }
     }
 
@@ -731,31 +781,41 @@ public:
         } else {
             rettype = get_return_type(*functype, notes);
 
-            if (auto tag = (*functype).get_tag();
-                tag != Type::Tag::FUNCTION && tag != Type::Tag::ANY) {
-                errors.emplace_back("Cannot call non-function type `" + to_string(*functype) + "`", location);
-            } else {
-                const auto& func = (*functype).get_function();
+            switch ((*functype).get_tag()) {
+                case Type::Tag::ANY:
+                    break;
+                case Type::Tag::FUNCTION: {
+                    const auto& func = (*functype).get_function();
 
-                auto rhs = std::vector<Type>{};
+                    auto rhs = std::vector<Type>{};
 
-                rhs.reserve(args->args.size() + 1);
+                    if (args) {
+                        rhs.reserve(args->args.size() + 1);
+                    } else {
+                        rhs.reserve(1);
+                    }
 
-                rhs.push_back(prefixtype);
+                    rhs.push_back(prefixtype);
 
-                for (const auto& expr : args->args) {
-                    rhs.push_back(expr->get_type(parent_scope));
-                }
+                    if (args) {
+                        for (const auto& expr : args->args) {
+                            rhs.push_back(expr->get_type(parent_scope));
+                        }
+                    }
 
-                const auto lhstype = Type::make_tuple(func.params, func.variadic);
-                const auto rhstype = Type::make_tuple(std::move(rhs), false);
-                const auto r = is_assignable(lhstype, rhstype);
+                    const auto lhstype = Type::make_tuple(func.params, func.variadic);
+                    const auto rhstype = Type::make_tuple(std::move(rhs), false);
+                    const auto r = is_assignable(lhstype, rhstype);
 
-                if (!r.yes) {
-                    errors.emplace_back(to_string(r), location);
-                } else if (!r.messages.empty()) {
-                    errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
-                }
+                    if (!r.yes) {
+                        errors.emplace_back(to_string(r), location);
+                    } else if (!r.messages.empty()) {
+                        errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
+                    }
+                } break;
+                default:
+                    errors.emplace_back("Cannot call non-function type `" + to_string(*functype) + "`", location);
+                    break;
             }
         }
 
@@ -796,20 +856,7 @@ public:
     }
 
     virtual Type get_type(const Scope& scope) const override {
-        std::size_t pos;
-        auto i = std::stoll(value, &pos);
-
-        if (pos == value.size()) {
-            return Type::make_literal(i);
-        }
-
-        auto f = std::stof(value, &pos);
-
-        if (pos == value.size()) {
-            return Type::make_literal(f);
-        }
-
-        return Type::make_literal(std::stof(value));
+        return Type::make_literal(NumberRep(value));
     }
 };
 
@@ -1630,58 +1677,7 @@ public:
     }
 
     virtual Type get_type(const Scope& scope) const override {
-        auto str = std::string{};
-        auto escape_quotes = value[0] == '"';
-
-        str.reserve(value.size() - 2);
-
-        for (auto i = 1u; i < value.size() - 1; ++i) {
-            auto c = value[i];
-            if (escape_quotes) {
-                switch (c) {
-                    case '\'':
-                        str += "\\'";
-                        break;
-                    case '\\':
-                        ++i;
-                        c = value[i];
-                        switch (c) {
-                            case '"':
-                                str += '"';
-                                break;
-                            default:
-                                str += '\\';
-                                str += c;
-                                break;
-                        }
-                        break;
-                    default:
-                        str += c;
-                        break;
-                }
-            } else {
-                switch (c) {
-                    case '\\':
-                        ++i;
-                        c = value[i];
-                        switch (c) {
-                            case '"':
-                                str += c;
-                                break;
-                            default:
-                                str += '\\';
-                                str += c;
-                                break;
-                        }
-                        break;
-                    default:
-                        str += c;
-                        break;
-                }
-            }
-        }
-
-        return Type::make_literal(str);
+        return Type::make_literal(normalize_quotes(value));
     }
 };
 
