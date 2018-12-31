@@ -14,3 +14,13 @@ fv(7)
 fv(7, 1, 2, 3)
 
 fv('horse', 1, 2, 3)
+
+interface T: {
+    m: (self: T, x: number): void
+}
+
+local t: T
+
+t:m(42)
+
+t:m('horse')

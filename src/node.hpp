@@ -730,6 +730,33 @@ public:
             notes.push_back("Could not find method '" + name + "' in type `" + to_string(prefixtype) + "`");
         } else {
             rettype = get_return_type(*functype, notes);
+
+            if (auto tag = (*functype).get_tag();
+                tag != Type::Tag::FUNCTION && tag != Type::Tag::ANY) {
+                errors.emplace_back("Cannot call non-function type `" + to_string(*functype) + "`", location);
+            } else {
+                const auto& func = (*functype).get_function();
+
+                auto rhs = std::vector<Type>{};
+
+                rhs.reserve(args->args.size() + 1);
+
+                rhs.push_back(prefixtype);
+
+                for (const auto& expr : args->args) {
+                    rhs.push_back(expr->get_type(parent_scope));
+                }
+
+                const auto lhstype = Type::make_tuple(func.params, func.variadic);
+                const auto rhstype = Type::make_tuple(std::move(rhs), false);
+                const auto r = is_assignable(lhstype, rhstype);
+
+                if (!r.yes) {
+                    errors.emplace_back(to_string(r), location);
+                } else if (!r.messages.empty()) {
+                    errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
+                }
+            }
         }
 
         if (!notes.empty()) {
