@@ -42,7 +42,13 @@ struct TypePrinter {
         switch (literal.underlying_type) {
             case LuaType::NIL: oss << "<nil literal>"; break;
             case LuaType::BOOLEAN: oss << (literal.boolean ? "true" : "false"); break;
-            case LuaType::NUMBER: oss << literal.number; break;
+            case LuaType::NUMBER:
+                if (!literal.number.is_integer) {
+                    oss << literal.number.floating;
+                } else {
+                    oss << literal.number.integer;
+                }
+                break;
             case LuaType::STRING: oss << literal.string; break;
         }
         return oss.str();

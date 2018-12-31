@@ -61,17 +61,42 @@ struct DeferredType {
     int id;
 };
 
+struct NumberRep {
+    bool is_integer;
+    union {
+        double floating;
+        std::int64_t integer;
+    };
+
+    NumberRep() = default;
+    NumberRep(double f) : is_integer(false), floating(f) {}
+    NumberRep(std::int64_t i) : is_integer(true), integer(i) {}
+};
+
+inline bool operator==(const NumberRep& lhs, const NumberRep& rhs) {
+    if (lhs.is_integer != rhs.is_integer) {
+        return false;
+    }
+
+    if (!lhs.is_integer) {
+        return lhs.floating == rhs.floating;
+    } else {
+        return lhs.integer == rhs.integer;
+    }
+}
+
 struct LiteralType {
     LuaType underlying_type;
     union {
         bool boolean;
-        float number;
+        NumberRep number;
         std::string string;
     };
 
     LiteralType() : underlying_type(LuaType::NIL) {}
     LiteralType(bool b) : underlying_type(LuaType::BOOLEAN), boolean(b) {}
-    LiteralType(float n) : underlying_type(LuaType::NUMBER), number(n) {}
+    LiteralType(double n) : underlying_type(LuaType::NUMBER), number(n) {}
+    LiteralType(std::int64_t n) : underlying_type(LuaType::NUMBER), number(n) {}
     LiteralType(std::string s) : underlying_type(LuaType::STRING), string(std::move(s)) {}
 
     LiteralType(LiteralType&& other) :

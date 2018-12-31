@@ -716,7 +716,20 @@ public:
     }
 
     virtual Type get_type(const Scope& scope) const override {
-        return Type::make_luatype(LuaType::NUMBER);
+        std::size_t pos;
+        auto i = std::stoll(value, &pos);
+
+        if (pos == value.size()) {
+            return Type::make_literal(i);
+        }
+
+        auto f = std::stof(value, &pos);
+
+        if (pos == value.size()) {
+            return Type::make_literal(f);
+        }
+
+        return Type::make_literal(std::stof(value));
     }
 };
 
@@ -1516,7 +1529,7 @@ public:
     }
 
     virtual Type get_type(const Scope& scope) const override {
-        return Type::make_luatype(LuaType::BOOLEAN);
+        return Type::make_literal(value);
     }
 };
 
@@ -1531,7 +1544,58 @@ public:
     }
 
     virtual Type get_type(const Scope& scope) const override {
-        return Type::make_luatype(LuaType::STRING);
+        auto str = std::string{};
+        auto escape_quotes = value[0] == '"';
+
+        str.reserve(value.size() - 2);
+
+        for (auto i = 1u; i < value.size() - 1; ++i) {
+            auto c = value[i];
+            if (escape_quotes) {
+                switch (c) {
+                    case '\'':
+                        str += "\\'";
+                        break;
+                    case '\\':
+                        ++i;
+                        c = value[i];
+                        switch (c) {
+                            case '"':
+                                str += '"';
+                                break;
+                            default:
+                                str += '\\';
+                                str += c;
+                                break;
+                        }
+                        break;
+                    default:
+                        str += c;
+                        break;
+                }
+            } else {
+                switch (c) {
+                    case '\\':
+                        ++i;
+                        c = value[i];
+                        switch (c) {
+                            case '"':
+                                str += c;
+                                break;
+                            default:
+                                str += '\\';
+                                str += c;
+                                break;
+                        }
+                        break;
+                    default:
+                        str += c;
+                        break;
+                }
+            }
+        }
+
+        return Type::make_literal(str);
     }
 };
 
