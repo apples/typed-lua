@@ -49,7 +49,7 @@ struct TypePrinter {
                     oss << literal.number.integer;
                 }
                 break;
-            case LuaType::STRING: oss << literal.string; break;
+            case LuaType::STRING: oss << "'" << literal.string << "'"; break;
         }
         return oss.str();
     }
