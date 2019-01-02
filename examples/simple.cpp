@@ -11,7 +11,7 @@ int main() {
         sol::lib::table,
         sol::lib::package);
     
-    lua["package"]["tluapath"] = "?.lua";
+    lua["package"]["path"] = "?.lua";
 
     auto deferred = typedlua::DeferredTypeCollection();
     auto scope = typedlua::Scope(&deferred);

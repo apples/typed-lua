@@ -7,12 +7,14 @@ namespace typedlua {
 namespace { // static
 
 const char* install_loader_lua = R"(
-    local tlua_compile, global_scope = ...
+    local tlua_compile = ...
 
     local function loader(name)
         local realname = name:gsub('%.', '/')
 
-        for path in package.tluapath:gmatch('[^;]+') do
+        local errors = {}
+
+        for path in package.path:gmatch('[^;]+') do
             local filepath = path:gsub('?', realname)
             local file = io.open(filepath)
 
@@ -20,28 +22,29 @@ const char* install_loader_lua = R"(
                 local text = file:read('*a')
                 file:close()
 
-                local result, err = tlua_compile(text, global_scope)
+                local result, err = tlua_compile(text)
 
                 if result then
-                    return (loadstring or load)(result, name)
+                    return (loadstring or load)(result, name), filepath
                 else
-                    error(filepath .. ": " .. err)
-                    return nil
+                    return '\n\t' .. filepath .. ': ' .. err
                 end
+            else
+                errors[#errors + 1] = '\n\tno file \'' .. filepath .. '\''
             end
         end
 
-        return nil, 'Unable to locate module "' .. name .. '"'
+        return table.unpack(errors)
     end
 
     local loaders = package.loaders or package.searchers
 
-    table.insert(loaders, 2, loader)
+    loaders[2] = loader
 )";
 
 int tlua_compile(lua_State* L) {
     auto source = lua_tostring(L, 1);
-    auto global_scope = static_cast<Scope*>(lua_touserdata(L, 2));
+    auto global_scope = static_cast<Scope*>(lua_touserdata(L, lua_upvalueindex(1)));
 
     auto new_source = std::optional<std::string>{};
     auto error_string = std::optional<std::string>{};
@@ -98,13 +101,15 @@ int tlua_compile(lua_State* L) {
 
 void install_loader(lua_State* L, Scope& global_scope) {
     luaL_loadstring(L, install_loader_lua);
-    lua_pushcfunction(L, tlua_compile);
     lua_pushlightuserdata(L, &global_scope);
+    lua_pushcclosure(L, tlua_compile, 1);
 
-    auto err = lua_pcall(L, 2, 0, 0);
+    auto err = lua_pcall(L, 1, 0, 0);
 
     if (err) {
-        throw std::runtime_error("Failed to install typedlua loader");
+        auto message = std::string(lua_tostring(L, -1));
+        lua_pop(L, 1);
+        throw std::runtime_error("Failed to install typedlua loader: " + message);
     }
 }
 
