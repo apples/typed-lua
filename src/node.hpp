@@ -65,6 +65,10 @@ public:
 
 class NType : public Node {
 public:
+    virtual void dump(std::ostream& out) const override final {
+        throw std::logic_error("Types cannot be emitted");
+    }
+
     virtual Type get_type(const Scope& scope) const = 0;
 };
 
@@ -82,7 +86,6 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << name;
-        if (type) out << "--[[:" << *type << "]]";
     }
 
     Type get_type(const Scope& scope) const {
@@ -104,10 +107,6 @@ public:
         if (!parent_scope.get_type(name)) {
             errors.emplace_back("Type `" + name + "` not in scope", location);
         }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << name;
     }
 
     virtual Type get_type(const Scope& scope) const override {
@@ -175,39 +174,6 @@ public:
             is_variadic);
     }
 
-    virtual void dump(std::ostream& out) const override {
-        if (!generic_params.empty()) {
-            bool first = true;
-            out << "<";
-            for (const auto& gparam : generic_params) {
-                if (!first) {
-                    out << ",";
-                }
-                out << gparam.name;
-                if (gparam.type) out << ":" << *gparam.type;
-                first = false;
-            }
-            out << ">";
-        }
-
-        out << "(";
-        bool first = true;
-        for (const auto& param : params) {
-            if (!first) {
-                out << ",";
-            }
-            out << param;
-            first = false;
-        }
-        if (is_variadic) {
-            if (!first) {
-                out << ",";
-            }
-            out << "...";
-        }
-        out << "):" << *ret;
-    }
-
     virtual Type get_type(const Scope& parent_scope) const override {
         return cached_type;
     }
@@ -224,25 +190,6 @@ public:
         for (const auto& param : params) {
             param.check(parent_scope, errors);
         }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "[";
-        bool first = true;
-        for (const auto& param : params) {
-            if (!first) {
-                out << ",";
-            }
-            out << param;
-            first = false;
-        }
-        if (variadic) {
-            if (!first) {
-                out << ",";
-            }
-            out << "...";
-        }
-        out << "]";
     }
 
     virtual Type get_type(const Scope& scope) const override {
@@ -264,10 +211,6 @@ public:
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         lhs->check(parent_scope, errors);
         rhs->check(parent_scope, errors);
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "(" << *lhs << "|" << *rhs << ")";
     }
 
     virtual Type get_type(const Scope& scope) const override {
@@ -400,13 +343,6 @@ public:
         if (fieldlist) fieldlist->check(parent_scope, errors);
     }
 
-    virtual void dump(std::ostream& out) const override {
-        out << "{";
-        if (indexlist) out << *indexlist;
-        if (fieldlist) out << *fieldlist;
-        out << "}";
-    }
-
     virtual Type get_type(const Scope& scope) const override {
         std::vector<KeyValPair> indexes;
         FieldMap fields;
@@ -424,10 +360,6 @@ public:
     NTypeLiteralBoolean(bool v) : value(v) {}
     bool value;
 
-    virtual void dump(std::ostream& out) const override {
-        out << (value ? "true" : "false");
-    }
-
     virtual Type get_type(const Scope& scope) const override {
         return Type::make_literal(value);
     }
@@ -439,10 +371,6 @@ public:
     NTypeLiteralNumber(const std::string& s) : value(s) {}
     NumberRep value;
 
-    virtual void dump(std::ostream& out) const override {
-        out << (value.is_integer ? value.integer : value.floating);
-    }
-
     virtual Type get_type(const Scope& scope) const override {
         return Type::make_literal(value);
     }
@@ -453,10 +381,6 @@ public:
     NTypeLiteralString() = default;
     NTypeLiteralString(std::string_view s) : value(normalize_quotes(s)) {}
     std::string value;
-
-    virtual void dump(std::ostream& out) const override {
-        out << "'" << value << "'";
-    }
 
     virtual Type get_type(const Scope& scope) const override {
         return Type::make_literal(value);
@@ -485,7 +409,7 @@ public:
     }
 
     virtual void dump(std::ostream& out) const override {
-        out << "--[[interface " << name << ":" << *type << "]]";
+        // do nothing
     }
 };
 
@@ -1380,7 +1304,6 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << "function " << *expr << "(" << *base.params << ")";
-        if (base.ret) out << "--[[:" << *base.ret << "]]";
         out << "\n";
         out << *base.block;
         out << "end";
@@ -1490,7 +1413,6 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << "function " << *expr << ":" << name << "(" << *params << ")";
-        if (ret) out << "--[[:" << *ret << "]]";
         out << "\n";
         out << *block;
         out << "end";
@@ -1557,7 +1479,6 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << "local function " << name << "(" << *params << ")";
-        if (ret) out << "--[[:" << *ret << "]]";
         out << "\n";
         out << *block;
         out << "end";
@@ -1706,19 +1627,7 @@ public:
     }
 
     virtual void dump(std::ostream& out) const override {
-        if (exprs.empty()) {
-            out << "--[=[global ";
-            bool first = true;
-            for (const auto& name : names) {
-                if (!first) {
-                    out << ",";
-                }
-                out << name;
-                first = false;
-            }
-            out << "]=]";
-        } else {
-            out << "--[[global]] ";
+        if (!exprs.empty()) {
             bool first = true;
             for (const auto& name : names) {
                 if (!first) {
@@ -1849,7 +1758,6 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << "function(" << *params << ")";
-        if (ret) out << "--[[:" << *ret << "]]";
         out << "\n";
         out << *block;
         out << "end";
