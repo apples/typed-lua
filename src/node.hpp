@@ -183,7 +183,8 @@ public:
                 if (!first) {
                     out << ",";
                 }
-                out << gparam;
+                out << gparam.name;
+                if (gparam.type) out << ":" << *gparam.type;
                 first = false;
             }
             out << ">";
