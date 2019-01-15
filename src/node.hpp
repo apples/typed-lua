@@ -68,6 +68,32 @@ public:
     virtual Type get_type(const Scope& scope) const = 0;
 };
 
+class NNameDecl : public Node {
+public:
+    NNameDecl() = default;
+    NNameDecl(std::string name) : name(std::move(name)) {}
+    NNameDecl(std::string name, std::unique_ptr<NType> type) : name(std::move(name)), type(std::move(type)) {}
+    std::string name;
+    std::unique_ptr<NType> type;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        if (type) type->check(parent_scope, errors);
+    }
+
+    virtual void dump(std::ostream& out) const override {
+        out << name;
+        if (type) out << "--[[:" << *type << "]]";
+    }
+
+    Type get_type(const Scope& scope) const {
+        if (type) {
+            return type->get_type(scope);
+        } else {
+            return Type::make_any();
+        }
+    }
+};
+
 class NTypeName : public NType {
 public:
     NTypeName() = default;
@@ -116,18 +142,53 @@ public:
         params(std::move(p)),
         ret(std::move(r)),
         is_variadic(v) {}
+    std::vector<NNameDecl> generic_params;
     std::vector<NTypeFunctionParam> params;
     std::unique_ptr<NType> ret;
     bool is_variadic;
+    mutable Type cached_type;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        for (const auto& param : params) {
-            param.check(parent_scope, errors);
+        auto scope = Scope(&parent_scope);
+
+        std::vector<NameType> genparams;
+        std::vector<Type> paramtypes;
+
+        for (auto i = 0u; i < generic_params.size(); ++i) {
+            const auto& gparam = generic_params[i];
+            gparam.check(scope, errors);
+            scope.add_type(gparam.name, Type::make_genparam(i));
+            genparams.push_back({gparam.name, gparam.get_type(scope)});
         }
-        ret->check(parent_scope, errors);
+
+        for (const auto& param : params) {
+            param.check(scope, errors);
+            paramtypes.push_back(param.type->get_type(scope));
+        }
+
+        ret->check(scope, errors);
+
+        cached_type = Type::make_function(
+            std::move(genparams),
+            std::move(paramtypes),
+            ret->get_type(scope),
+            is_variadic);
     }
 
     virtual void dump(std::ostream& out) const override {
+        if (!generic_params.empty()) {
+            bool first = true;
+            out << "<";
+            for (const auto& gparam : generic_params) {
+                if (!first) {
+                    out << ",";
+                }
+                out << gparam;
+                first = false;
+            }
+            out << ">";
+        }
+
         out << "(";
         bool first = true;
         for (const auto& param : params) {
@@ -146,12 +207,8 @@ public:
         out << "):" << *ret;
     }
 
-    virtual Type get_type(const Scope& scope) const override {
-        std::vector<Type> paramtypes;
-        for (const auto& param : params) {
-            paramtypes.push_back(param.type->get_type(scope));
-        }
-        return Type::make_function(std::move(paramtypes), ret->get_type(scope), is_variadic);
+    virtual Type get_type(const Scope& parent_scope) const override {
+        return cached_type;
     }
 };
 
@@ -300,9 +357,11 @@ public:
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         for (const auto& field : fields) {
             field->check(parent_scope, errors);
-            auto iter = std::find_if(cached_fields.begin(), cached_fields.end(), [&](FieldDecl& fd) {
+
+            auto iter = std::find_if(cached_fields.begin(), cached_fields.end(), [&](NameType& fd) {
                 return fd.name == field->name;
             });
+
             if (iter != cached_fields.end()) {
                 errors.emplace_back("Duplicate table key '" + field->name + "'", location);
                 iter->type = iter->type | field->type->get_type(parent_scope);
@@ -426,32 +485,6 @@ public:
 
     virtual void dump(std::ostream& out) const override {
         out << "--[[interface " << name << ":" << *type << "]]";
-    }
-};
-
-class NNameDecl : public Node {
-public:
-    NNameDecl() = default;
-    NNameDecl(std::string name) : name(std::move(name)) {}
-    NNameDecl(std::string name, std::unique_ptr<NType> type) : name(std::move(name)), type(std::move(type)) {}
-    std::string name;
-    std::unique_ptr<NType> type;
-
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        if (type) type->check(parent_scope, errors);
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << name;
-        if (type) out << "--[[:" << *type << "]]";
-    }
-
-    Type get_type(const Scope& scope) const {
-        if (type) {
-            return type->get_type(scope);
-        } else {
-            return Type::make_any();
-        }
     }
 };
 
@@ -698,6 +731,7 @@ public:
         args(std::move(a)) {}
     std::unique_ptr<NExpr> prefix;
     std::unique_ptr<NArgSeq> args;
+    mutable std::optional<Type> cached_rettype;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
         prefix->check(parent_scope, errors);
@@ -713,6 +747,7 @@ public:
 
                 auto rhs = std::vector<Type>{};
 
+                // Convert args into a semi-tuple
                 if (args) {
                     rhs.reserve(args->args.size());
 
@@ -721,14 +756,36 @@ public:
                     }
                 }
 
-                const auto lhstype = Type::make_tuple(func.params, func.variadic);
-                const auto rhstype = Type::make_tuple(std::move(rhs), false);
-                const auto r = is_assignable(lhstype, rhstype);
+                if (rhs.size() > func.params.size() && !func.variadic) {
+                    errors.emplace_back("Too many arguments for non-variadic function", location);
+                } else {
+                    if (rhs.size() < func.params.size()) {
+                        std::fill_n(
+                            std::back_inserter(rhs),
+                            func.params.size() - rhs.size(),
+                            Type::make_luatype(LuaType::NIL));
+                    }
+                    
+                    std::vector<std::optional<Type>> genparams_inferred;
 
-                if (!r.yes) {
-                    errors.emplace_back(to_string(r), location);
-                } else if (!r.messages.empty()) {
-                    errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
+                    genparams_inferred.resize(func.genparams.size());
+
+                    const auto sz = std::min(rhs.size(), func.params.size());
+                    
+                    for (auto i = 0u; i < sz; ++i) {
+                        const auto& rhstype = rhs[i];
+                        const auto& lhstype = func.params[i];
+
+                        auto r = check_param(lhstype, rhstype, func.genparams, genparams_inferred);
+
+                        if (!r.yes) {
+                            errors.emplace_back(to_string(r), location);
+                        } else if (!r.messages.empty()) {
+                            errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
+                        }
+                    }
+
+                    cached_rettype = apply_genparams(genparams_inferred, *func.ret);
                 }
             } break;
             default:
@@ -744,11 +801,7 @@ public:
     }
 
     virtual Type get_type(const Scope& scope) const override {
-        auto functype = prefix->get_type(scope);
-        switch (functype.get_tag()) {
-            case Type::Tag::FUNCTION: return *functype.get_function().ret;
-            default: return Type::make_any();
-        }
+        return cached_rettype.value_or(Type::make_any());
     }
 };
 
@@ -1222,49 +1275,59 @@ public:
     }
 };
 
-class NFunction : public Node {
+class FunctionBase {
 public:
-    NFunction() = default;
-    NFunction(std::unique_ptr<NExpr> e, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b) :
-        expr(std::move(e)),
+    FunctionBase() = default;
+    FunctionBase(std::vector<NNameDecl> g, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b) :
+        generic_params(std::move(g)),
         params(std::move(p)),
         ret(std::move(r)),
         block(std::move(b)) {}
-    std::unique_ptr<NExpr> expr;
-    std::unique_ptr<NFuncParams> params;
-    std::unique_ptr<NType> ret;
-    std::unique_ptr<NBlock> block;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        params->check(parent_scope, errors);
-        if (ret) ret->check(parent_scope, errors);
+    Type check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        auto return_type = Type{};
 
-        auto return_type = Type::make_any();
+        auto setup_scope = [&] {
+            auto scope = Scope(&parent_scope);
 
-        if (ret) {
-            return_type = ret->get_type(parent_scope);
+            // Create light types for parameter checking
+            for (auto i = 0u; i < generic_params.size(); ++i) {
+                const auto& gparam = generic_params[i];
+                gparam.check(scope, errors);
+                scope.add_name(gparam.name, Type::make_genparam(i));
+            }
 
-            auto this_scope = Scope(&parent_scope);
-            params->add_to_scope(this_scope);
-            this_scope.set_return_type(return_type);
+            params->check(scope, errors);
+
+            // Use interface types in function body
+            for (const auto& gparam : generic_params) {
+                scope.add_name(gparam.name, gparam.get_type(scope));
+            }
+
+            params->add_to_scope(scope);
 
             if (params->is_variadic) {
-                this_scope.set_dots_type(Type::make_tuple({}, true));
+                scope.set_dots_type(Type::make_tuple({}, true));
             } else {
-                this_scope.disable_dots();
+                scope.disable_dots();
             }
+
+            if (ret) ret->check(parent_scope, errors);
+
+            return scope;
+        };
+
+        if (ret) {
+            auto this_scope = setup_scope();
+
+            return_type = ret->get_type(this_scope);
+            this_scope.set_return_type(return_type);
 
             block->check(this_scope, errors);
         } else {
-            auto this_scope = Scope(&parent_scope);
-            params->add_to_scope(this_scope);
-            this_scope.deduce_return_type();
+            auto this_scope = setup_scope();
 
-            if (params->is_variadic) {
-                this_scope.set_dots_type(Type::make_tuple({}, true));
-            } else {
-                this_scope.disable_dots();
-            }
+            this_scope.deduce_return_type();
 
             block->check(this_scope, errors);
 
@@ -1273,16 +1336,52 @@ public:
             }
         }
 
-        const auto functype = Type::make_function(params->get_types(parent_scope), std::move(return_type), params->is_variadic);
+        return return_type;
+    }
+
+    Type get_type(Scope& parent_scope, const Type& rettype) const {
+        auto scope = Scope(&parent_scope);
+
+        std::vector<NameType> genparams;
+
+        for (auto i = 0u; i < generic_params.size(); ++i) {
+            const auto& gparam = generic_params[i];
+            auto type = Type::make_genparam(i);
+            scope.add_name(gparam.name, type);
+            genparams.push_back({gparam.name, gparam.get_type(scope)});
+        }
+
+        return Type::make_function(std::move(genparams), params->get_types(scope), rettype, params->is_variadic);
+    }
+
+    std::vector<NNameDecl> generic_params;
+    std::unique_ptr<NFuncParams> params;
+    std::unique_ptr<NType> ret;
+    std::unique_ptr<NBlock> block;
+};
+
+class NFunction : public Node {
+public:
+    NFunction() = default;
+    NFunction(FunctionBase fb, std::unique_ptr<NExpr> e) :
+        base(std::move(fb)),
+        expr(std::move(e)) {}
+    FunctionBase base;
+    std::unique_ptr<NExpr> expr;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+        auto return_type = base.check(parent_scope, errors);
+
+        const auto functype = base.get_type(parent_scope, return_type);
 
         expr->check_expect(parent_scope, functype, errors);
     }
 
     virtual void dump(std::ostream& out) const override {
-        out << "function " << *expr << "(" << *params << ")";
-        if (ret) out << "--[[:" << *ret << "]]";
+        out << "function " << *expr << "(" << *base.params << ")";
+        if (base.ret) out << "--[[:" << *base.ret << "]]";
         out << "\n";
-        out << *block;
+        out << *base.block;
         out << "end";
     }
 };
@@ -1833,9 +1932,10 @@ public:
         FieldMap& fielddecls,
         std::vector<CompileError>& errors) const override
     {
-        auto iter = std::find_if(fielddecls.begin(), fielddecls.end(), [&](FieldDecl& fd) {
+        auto iter = std::find_if(fielddecls.begin(), fielddecls.end(), [&](NameType& fd) {
             return fd.name == key;
         });
+
         if (iter != fielddecls.end()) {
             errors.emplace_back("Duplicate table key '" + key + "'", location);
             iter->type = iter->type | value->get_type(scope);

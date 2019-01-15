@@ -42,6 +42,7 @@
     typedlua::ast::NIndexList* indexlist;
     typedlua::ast::NFieldDecl* fielddecl;
     typedlua::ast::NFieldDeclList* fielddecllist;
+    typedlua::ast::NTypeFunction* typefunction;
 }
 
 %code {
@@ -87,6 +88,7 @@
 %destructor { delete $$; } <indexlist>
 %destructor { delete $$; } <fielddecl>
 %destructor { delete $$; } <fielddecllist>
+%destructor { delete $$; } <typefunction>
 
 %token TCEQ TCNE TCLE TCGE TSHL TSHR
 %token TSLASH2 TDOT2 TDOT3 TCOLON2
@@ -127,7 +129,7 @@
 %type <field> field
 %type <fields> fieldlist
 %type <params> funcparams
-%type <namedecls> namelist
+%type <namedecls> namelist funcgenparams
 %type <type> commonunittype unittype type typetuple idtype tabletype
 %type <type> funcret rettype functype retunittype literaltype
 %type <typefuncparams> typefuncparams
@@ -135,6 +137,7 @@
 %type <indexlist> indexes tableindexes
 %type <fielddecl> fielddecl
 %type <fielddecllist> fielddecls tablefields
+%type <typefunction> regfunctype
 
 %start chunk
 
@@ -288,23 +291,32 @@ literaltype: TFALSE { $$ = new NTypeLiteralBoolean(false); $$->location = @$; }
            }
            ;
 
-functype: '(' ')' ':' rettype[ret] {
-            $$ = new NTypeFunction({}, std::unique_ptr<NType>($ret), false);
+regfunctype: '(' ')' ':' rettype[ret] {
+               $$ = new NTypeFunction({}, std::unique_ptr<NType>($ret), false);
+               $$->location = @$;
+           }
+           | '(' typefuncparams ')' ':' rettype[ret] {
+               $$ = new NTypeFunction(std::move(*$typefuncparams), ptr($ret), false);
+               $$->location = @$;
+               delete $typefuncparams;
+           }
+           | '(' TDOT3 ')' ':' rettype[ret] {
+               $$ = new NTypeFunction({}, std::unique_ptr<NType>($ret), true);
+               $$->location = @$;
+           }
+           | '(' typefuncparams ',' TDOT3 ')' ':' rettype[ret] {
+               $$ = new NTypeFunction(std::move(*$typefuncparams), ptr($ret), true);
+               $$->location = @$;
+               delete $typefuncparams;
+           }
+           ;
+
+functype: regfunctype { $$ = $1; }
+        | '<' namelist '>' regfunctype {
+            $regfunctype->generic_params = std::move(*$namelist);
+            $$ = $regfunctype;
             $$->location = @$;
-        }
-        | '(' typefuncparams ')' ':' rettype[ret] {
-            $$ = new NTypeFunction(std::move(*$typefuncparams), ptr($ret), false);
-            $$->location = @$;
-            delete $typefuncparams;
-        }
-        | '(' TDOT3 ')' ':' rettype[ret] {
-            $$ = new NTypeFunction({}, std::unique_ptr<NType>($ret), true);
-            $$->location = @$;
-        }
-        | '(' typefuncparams ',' TDOT3 ')' ':' rettype[ret] {
-            $$ = new NTypeFunction(std::move(*$typefuncparams), ptr($ret), true);
-            $$->location = @$;
-            delete $typefuncparams;
+            delete $namelist;
         }
         ;
 
@@ -510,11 +522,26 @@ localfunc: TLOCAL TFUNCTION TIDENTIFIER[name] funcparams funcret block TEND {
 
 function: TFUNCTION funcvar funcparams funcret block TEND {
             $$ = new NFunction(
-                std::unique_ptr<NExpr>($funcvar),
-                std::unique_ptr<NFuncParams>($funcparams),
-                std::unique_ptr<NType>($funcret),
-                std::unique_ptr<NBlock>($block));
+                {
+                    {},
+                    ptr($funcparams),
+                    ptr($funcret),
+                    ptr($block)
+                },
+                ptr($funcvar));
             $$->location = @$;
+        }
+        | TFUNCTION funcvar funcgenparams funcparams funcret block TEND {
+            $$ = new NFunction(
+                {
+                    std::move(*$funcgenparams),
+                    ptr($funcparams),
+                    ptr($funcret),
+                    ptr($block)
+                },
+                ptr($funcvar));
+            $$->location = @$;
+            delete $funcgenparams;
         }
         | TFUNCTION funcvar ':' TIDENTIFIER[name] funcparams funcret block TEND {
             $$ = new NSelfFunction(
@@ -545,6 +572,10 @@ funcvar: TIDENTIFIER {
            delete $3;
        }
        ;
+
+funcgenparams: '<' '>' { $$ = new std::vector<NNameDecl>{}; }
+             | '<' namelist '>' { $$ = $namelist; }
+             ;
 
 funcparams: '(' ')' { $$ = new NFuncParams(); $$->location = @$; }
           | '(' TDOT3 ')' {

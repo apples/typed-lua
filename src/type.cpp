@@ -22,7 +22,8 @@ struct TypePrinter {
             case Type::Tag::TABLE: return to_string(type.get_table());
             case Type::Tag::DEFERRED: return to_string(type.get_deferred());
             case Type::Tag::LITERAL: return to_string(type.get_literal());
-            default: throw std::logic_error("Tag not implemented for to_string");
+            case Type::Tag::GENPARAM: return "@" + std::to_string(type.get_genparam().index);
+            default: throw std::logic_error("Tag " + std::to_string(static_cast<int>(type.get_tag())) + " not implemented for to_string");
         }
     }
 
@@ -56,6 +57,21 @@ struct TypePrinter {
 
     std::string to_string(const FunctionType& function) {
         std::ostringstream oss;
+        
+        if (!function.genparams.empty()) {
+            bool first = true;
+            oss << "<";
+            for (const auto& gparam : function.genparams) {
+                if (!first) {
+                    oss << ",";
+                }
+                oss << gparam.name;
+                oss << ":" << to_string(gparam.type);
+                first = false;
+            }
+            oss << ">";
+        }
+
         oss << "(";
         bool first = true;
         for (const auto& param : function.params) {
@@ -254,6 +270,98 @@ std::string to_string(const LuaType& luatype) {
 
 std::string to_string(const LiteralType& literal) {
     return to_string_impl(literal);
+}
+
+Type apply_genparams(const std::vector<std::optional<Type>>& genparams, const Type& type) {
+    if (genparams.empty()) {
+        return type;
+    }
+
+    switch (type.get_tag()) {
+        case Type::Tag::GENPARAM:
+            return genparams[type.get_genparam().index].value_or(Type::make_any());
+        case Type::Tag::DEFERRED: {
+            const auto& defer = type.get_deferred();
+            return apply_genparams(genparams, defer.collection->get(defer.id));
+        }
+        case Type::Tag::TABLE: {
+            const auto& table = type.get_table();
+            
+            std::vector<KeyValPair> indexes;
+            FieldMap fields;
+
+            indexes.reserve(table.indexes.size());
+            fields.reserve(table.fields.size());
+
+            for (const auto& index : table.indexes) {
+                auto key = apply_genparams(genparams, index.key);
+                auto val = apply_genparams(genparams, index.val);
+
+                indexes.push_back({std::move(key), std::move(val)});
+            }
+
+            for (const auto& field : table.fields) {
+                auto fieldtype = apply_genparams(genparams, field.type);
+
+                fields.push_back({field.name, fieldtype});
+            }
+
+            return Type::make_table(std::move(indexes), std::move(fields));
+        }
+        case Type::Tag::SUM: {
+            const auto& sum = type.get_sum();
+
+            std::optional<Type> rv;
+
+            for (const auto& t : sum.types) {
+                if (rv) {
+                    rv = *rv | apply_genparams(genparams, t);
+                } else {
+                    rv = apply_genparams(genparams, t);
+                }
+            }
+
+            return rv.value_or(Type::make_any());
+        }
+        case Type::Tag::TUPLE: {
+            const auto& tuple = type.get_tuple();
+
+            std::vector<Type> types;
+
+            types.reserve(tuple.types.size());
+
+            for (const auto& t : tuple.types) {
+                types.push_back(apply_genparams(genparams, t));
+            }
+
+            return Type::make_tuple(std::move(types), tuple.is_variadic);
+        }
+        case Type::Tag::FUNCTION: {
+            const auto& func = type.get_function();
+
+            std::vector<NameType> gparams;
+            std::vector<Type> params;
+            Type ret;
+
+            for (const auto& gparam : func.genparams) {
+                gparams.push_back({gparam.name, apply_genparams(genparams, gparam.type)});
+            }
+
+            for (const auto& param : func.params) {
+                params.push_back(apply_genparams(genparams, param));
+            }
+
+            ret = apply_genparams(genparams, *func.ret);
+
+            return Type::make_function(
+                std::move(gparams),
+                std::move(params),
+                std::move(ret),
+                func.variadic);
+        }
+        default:
+            return type;
+    }
 }
 
 } // namespace typedlua

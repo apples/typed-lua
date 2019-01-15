@@ -16,11 +16,17 @@ public:
 
     const Type* get_type_of(const std::string& name) const {
         auto iter = names.find(name);
-        if (iter != names.end()) {
+        
+        if (iter != names.end())
+        {
             return &iter->second;
-        } else if (parent) {
+        }
+        else if (parent)
+        {
             return parent->get_type_of(name);
-        } else {
+        }
+        else
+        {
             return nullptr;
         }
     }

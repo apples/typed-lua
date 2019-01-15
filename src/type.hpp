@@ -9,10 +9,15 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <optional>
+#include <variant>
 
 namespace typedlua {
 
 std::string normalize_quotes(std::string_view s);
+
+struct VoidType {};
+
+struct AnyType {};
 
 enum class LuaType {
     NIL,
@@ -25,9 +30,10 @@ enum class LuaType {
 class Type;
 class DeferredTypeCollection;
 struct KeyValPair;
-struct FieldDecl;
+struct NameType;
 
 struct FunctionType {
+    std::vector<NameType> genparams;
     std::vector<Type> params;
     std::unique_ptr<Type> ret;
     bool variadic = false;
@@ -37,11 +43,25 @@ struct FunctionType {
         params(std::move(params)),
         ret(std::move(ret)),
         variadic(v) {}
+    FunctionType(std::vector<NameType> genparams, std::vector<Type> params, std::unique_ptr<Type> ret, bool v) :
+        genparams(std::move(genparams)),
+        params(std::move(params)),
+        ret(std::move(ret)),
+        variadic(v) {}
     FunctionType(FunctionType&&) = default;
     FunctionType(const FunctionType& other) :
+        genparams(other.genparams),
         params(other.params),
         ret(std::make_unique<Type>(*other.ret)),
         variadic(other.variadic) {}
+    
+    FunctionType& operator=(FunctionType&&) = default;
+    FunctionType& operator=(const FunctionType& other) {
+        genparams = other.genparams;
+        params = other.params;
+        ret = std::make_unique<Type>(*other.ret);
+        return *this;
+    }
 };
 
 struct TupleType {
@@ -53,7 +73,7 @@ struct SumType {
     std::vector<Type> types;
 };
 
-using FieldMap = std::vector<FieldDecl>;
+using FieldMap = std::vector<NameType>;
 struct TableType {
     std::vector<KeyValPair> indexes;
     FieldMap fields;
@@ -198,6 +218,10 @@ struct LiteralType {
     }
 };
 
+struct GenericParamType {
+    int index;
+};
+
 class Type {
 public:
     enum class Tag {
@@ -209,62 +233,48 @@ public:
         SUM,
         TABLE,
         DEFERRED,
-        LITERAL
+        LITERAL,
+        GENPARAM,
     };
 
-    Type() : tag(Tag::VOID) {}
-    Type(LuaType lt) : tag(Tag::LUATYPE), luatype(lt) {}
+    Type() = default;
 
-    Type(const Type& other) : tag(other.tag) {
-        assign_from(other);
-    }
-
-    Type(Type&& other) : tag(std::exchange(other.tag, Tag::VOID)) {
-        assign_from(std::move(other));
-    }
-
-    Type& operator=(const Type& other) {
-        destroy();
-        tag = other.tag;
-        assign_from(other);
-        return *this;
-    }
-
-    Type& operator=(Type&& other) {
-        destroy();
-        tag = std::exchange(other.tag, Tag::VOID);
-        assign_from(std::move(other));
-        return *this;
-    }
-
-    ~Type() noexcept(false) {
-        destroy();
-    }
+    Type(LuaType lt) : types(lt) {}
 
     static Type make_any() {
         auto type = Type{};
-        type.tag = Tag::ANY;
+        type.types = AnyType{};
         return type;
     }
 
     static Type make_luatype(LuaType lt) {
         auto type = Type();
-        type.tag = Tag::LUATYPE;
-        type.luatype = lt;
+        type.types = lt;
         return type;
     }
 
     static Type make_function(std::vector<Type> params, Type ret, bool variadic) {
         auto type = Type{};
-        type.tag = Tag::FUNCTION;
-        new (&type.function) FunctionType{std::move(params), std::make_unique<Type>(std::move(ret)), variadic};
+        type.types = FunctionType{
+            std::move(params),
+            std::make_unique<Type>(std::move(ret)),
+            variadic};
+        return type;
+    }
+
+    static Type make_function(std::vector<NameType> genparams, std::vector<Type> params, Type ret, bool variadic) {
+        auto type = Type{};
+        type.types = FunctionType{
+            std::move(genparams),
+            std::move(params),
+            std::make_unique<Type>(std::move(ret)),
+            variadic};
         return type;
     }
 
     static Type make_tuple(std::vector<Type> types, bool is_variadic) {
         auto type = Type{};
-        type.tag = Tag::TUPLE;
-        new (&type.tuple) TupleType{std::move(types), is_variadic};
+        type.types = TupleType{std::move(types), is_variadic};
         return type;
     }
 
@@ -278,98 +288,64 @@ public:
 
     static Type make_table(std::vector<KeyValPair> indexes, FieldMap fields) {
         auto type = Type{};
-        type.tag = Tag::TABLE;
-        new (&type.table) TableType{std::move(indexes), std::move(fields)};
+        type.types = TableType{std::move(indexes), std::move(fields)};
         return type;
     }
 
     static Type make_deferred(DeferredTypeCollection& collection, int id) {
         auto type = Type{};
-        type.tag = Tag::DEFERRED;
-        new (&type.deferred) DeferredType{&collection, id};
+        type.types = DeferredType{&collection, id};
         return type;
     }
 
     static Type make_literal(LiteralType literal) {
         auto type = Type{};
-        type.tag = Tag::LITERAL;
-        new (&type.literal) LiteralType(std::move(literal));
+        type.types = LiteralType(std::move(literal));
         return type;
     }
 
-    const Tag& get_tag() const { return tag; }
+    static Type make_genparam(int index) {
+        auto type = Type{};
+        type.types = GenericParamType{index};
+        return type;
+    }
 
-    const LuaType& get_luatype() const { return luatype; }
+    Tag get_tag() const { return static_cast<Tag>(types.index()); }
 
-    const FunctionType& get_function() const { return function; }
+    const LuaType& get_luatype() const { return std::get<LuaType>(types); }
 
-    const TupleType& get_tuple() const { return tuple; }
+    const FunctionType& get_function() const { return std::get<FunctionType>(types); }
 
-    const SumType& get_sum() const { return sum; }
+    const TupleType& get_tuple() const { return std::get<TupleType>(types); }
 
-    const TableType& get_table() const { return table; }
+    const SumType& get_sum() const { return std::get<SumType>(types); }
 
-    const DeferredType& get_deferred() const { return deferred; }
+    const TableType& get_table() const { return std::get<TableType>(types); }
 
-    const LiteralType& get_literal() const { return literal; }
+    const DeferredType& get_deferred() const { return std::get<DeferredType>(types); }
+
+    const LiteralType& get_literal() const { return std::get<LiteralType>(types); }
+
+    const GenericParamType& get_genparam() const { return std::get<GenericParamType>(types); }
 
     friend Type operator|(const Type& lhs, const Type& rhs);
 
     friend Type operator-(const Type& lhs, const Type& rhs);
 
 private:
-    void destroy() {
-        switch (tag) {
-            case Tag::VOID: break;
-            case Tag::ANY: break;
-            case Tag::LUATYPE: break;
-            case Tag::FUNCTION: std::destroy_at(&function); break;
-            case Tag::TUPLE: std::destroy_at(&tuple); break;
-            case Tag::SUM: std::destroy_at(&sum); break;
-            case Tag::TABLE: std::destroy_at(&table); break;
-            case Tag::DEFERRED: std::destroy_at(&deferred); break;
-            case Tag::LITERAL: std::destroy_at(&literal); break;
-            default: throw std::logic_error("Type tag not implemented");
-        }
-    }
+    using Types = std::variant<
+        VoidType,
+        AnyType,
+        LuaType,
+        FunctionType,
+        TupleType,
+        SumType,
+        TableType,
+        DeferredType,
+        LiteralType,
+        GenericParamType>;
 
-    void assign_from(const Type& other) {
-        switch (tag) {
-            case Tag::VOID: break;
-            case Tag::ANY: break;
-            case Tag::LUATYPE: luatype = other.luatype; break;
-            case Tag::FUNCTION: new (&function) FunctionType(other.function); break;
-            case Tag::TUPLE: new (&tuple) TupleType(other.tuple); break;
-            case Tag::SUM: new (&sum) SumType(other.sum); break;
-            case Tag::TABLE: new (&table) TableType(other.table); break;
-            case Tag::DEFERRED: new (&deferred) DeferredType(other.deferred); break;
-            case Tag::LITERAL: new (&literal) LiteralType(other.literal); break;
-            default: throw std::logic_error("Type tag not implemented");
-        }
-    }
-
-    void assign_from(Type&& other) {
-        switch (tag) {
-            case Tag::FUNCTION: new (&function) FunctionType(std::move(other.function)); break;
-            case Tag::TUPLE: new (&tuple) TupleType(std::move(other.tuple)); break;
-            case Tag::SUM: new (&sum) SumType(std::move(other.sum)); break;
-            case Tag::TABLE: new (&table) TableType(std::move(other.table)); break;
-            case Tag::DEFERRED: new (&deferred) DeferredType(std::move(other.deferred)); break;
-            case Tag::LITERAL: new (&literal) LiteralType(std::move(other.literal)); break;
-            default: assign_from(other);
-        }
-    }
-
-    Tag tag;
-    union {
-        LuaType luatype;
-        FunctionType function;
-        TupleType tuple;
-        SumType sum;
-        TableType table;
-        DeferredType deferred;
-        LiteralType literal;
-    };
+    Types types;
 };
 
 std::string to_string(const Type& type);
@@ -381,6 +357,7 @@ std::string to_string(const TableType& table);
 std::string to_string(const DeferredType& defer);
 std::string to_string(const LuaType& luatype);
 std::string to_string(const LiteralType& literal);
+std::string to_string(const GenericParamType& genparam);
 
 class DeferredTypeCollection {
 public:
@@ -425,7 +402,7 @@ struct KeyValPair {
     Type val;
 };
 
-struct FieldDecl {
+struct NameType {
     std::string name;
     Type type;
 };
@@ -481,30 +458,29 @@ inline Type operator|(const Type& lhs, const Type& rhs) {
     }
 
     auto rv = Type{};
-    rv.tag = Type::Tag::SUM;
-    new (&rv.sum) SumType{};
+    rv.types = SumType{};
 
     const auto lhs_size = lhs.get_tag() == Type::Tag::SUM ? lhs.get_sum().types.size() : 1;
     const auto rhs_size = rhs.get_tag() == Type::Tag::SUM ? rhs.get_sum().types.size() : 1;
 
-    rv.sum.types.reserve(lhs_size + rhs_size);
+    std::get<SumType>(rv.types).types.reserve(lhs_size + rhs_size);
 
     if (lhs.get_tag() == Type::Tag::SUM) {
         const auto& lhs_types = lhs.get_sum().types;
-        rv.sum.types.insert(rv.sum.types.end(), lhs_types.begin(), lhs_types.end());
+        std::get<SumType>(rv.types).types.insert(std::get<SumType>(rv.types).types.end(), lhs_types.begin(), lhs_types.end());
     } else {
-        rv.sum.types.push_back(lhs);
+        std::get<SumType>(rv.types).types.push_back(lhs);
     }
 
     if (rhs.get_tag() == Type::Tag::SUM) {
         const auto& rhs_types = rhs.get_sum().types;
         for (const auto& type : rhs_types) {
             if (!is_assignable(rv, type).yes) {
-                rv.sum.types.push_back(type);
+                std::get<SumType>(rv.types).types.push_back(type);
             }
         }
     } else {
-        rv.sum.types.push_back(rhs);
+        std::get<SumType>(rv.types).types.push_back(rhs);
     }
 
     return rv;
@@ -531,8 +507,7 @@ inline Type operator-(const Type& lhs, const Type& rhs) {
         }
 
         auto rv = Type{};
-        rv.tag = Type::Tag::SUM;
-        new (&rv.sum) SumType{std::move(result)};
+        rv.types = SumType{std::move(result)};
         return rv;
     }
 
@@ -598,7 +573,7 @@ inline Type narrow_field(Type tabletype, const std::string& fieldname, const Typ
 
     const auto& table = tabletype.get_table();
 
-    std::vector<FieldDecl> newfields;
+    std::vector<NameType> newfields;
 
     bool found = false;
 
@@ -612,7 +587,7 @@ inline Type narrow_field(Type tabletype, const std::string& fieldname, const Typ
     }
 
     if (!found) {
-        newfields.push_back(FieldDecl{fieldname, fieldtype});
+        newfields.push_back(NameType{fieldname, fieldtype});
     }
 
     return Type::make_table(table.indexes, std::move(newfields));
@@ -1050,5 +1025,90 @@ inline AssignResult is_assignable(const Type& lhs, const Type& rhs) {
 
     return r;
 }
+
+inline AssignResult check_param(
+    const Type& param,
+    const Type& arg,
+    const std::vector<NameType>& genparams,
+    std::vector<std::optional<Type>>& genparams_inferred)
+{
+    switch (param.get_tag()) {
+        case Type::Tag::GENPARAM: {
+            auto idx = param.get_genparam().index;
+            const auto& genparam = genparams[idx];
+            auto& inferred = genparams_inferred[idx];
+
+            if (inferred) {
+                return is_assignable(*inferred, arg);
+            } else {
+                auto r = check_param(genparam.type, arg, genparams, genparams_inferred);
+                if (r.yes) {
+                    inferred = arg;
+                }
+                return r;
+            }
+        } break;
+        case Type::Tag::TABLE: {
+            if (arg.get_tag() != Type::Tag::TABLE) {
+                return {false, cannot_assign(param, arg)};
+            }
+
+            const auto& table = param.get_table();
+            const auto& argtable = arg.get_table();
+
+            for (const auto& index : table.indexes) {
+                for (const auto& argindex : argtable.indexes) {
+                    if (is_assignable(argindex.key, index.key).yes) {
+                        auto r = check_param(index.val, argindex.val, genparams, genparams_inferred);
+
+                        if (!r.yes) {
+                            r.messages.push_back("When checking param table index `" + to_string(index.key) + "`");
+                            return r;
+                        }
+                    }
+                }
+            }
+
+            for (const auto& field : table.fields) {
+                for (const auto& argfield : argtable.fields) {
+                    if (field.name == argfield.name) {
+                        auto r = check_param(field.type, argfield.type, genparams, genparams_inferred);
+
+                        if (!r.yes) {
+                            r.messages.push_back("When checking param table field `" + to_string(field.name) + "`");
+                            return r;
+                        }
+                    }
+                }
+            }
+
+            return true;
+        } break;
+        case Type::Tag::SUM: {
+            const auto& sum = param.get_sum();
+
+            for (const auto& type : sum.types) {
+                auto r = check_param(type, arg, genparams, genparams_inferred);
+
+                if (r.yes) {
+                    return r;
+                }
+            }
+
+            return {false, cannot_assign(param, arg)};
+        } break;
+        case Type::Tag::DEFERRED: {
+            const auto& defer = param.get_deferred();
+            const auto& type = defer.collection->get(defer.id);
+
+            return check_param(type, arg, genparams, genparams_inferred);
+        } break;
+        default: {
+            return is_assignable(param, arg);
+        } break;
+    }
+}
+
+Type apply_genparams(const std::vector<std::optional<Type>>& genparams, const Type& type);
 
 } // namespace typedlua
