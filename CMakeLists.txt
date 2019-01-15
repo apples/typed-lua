@@ -19,6 +19,7 @@ add_library(typedlua
     src/loader.hpp
     src/loader.cpp
     src/node.hpp
+    src/node.cpp
     src/type.hpp
     src/type.cpp
     src/typedlua_compiler.cpp

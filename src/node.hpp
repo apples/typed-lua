@@ -1,30 +1,26 @@
 #ifndef TYPEDLUA_NODE_HPP
 #define TYPEDLUA_NODE_HPP
 
-#include "type.hpp"
-#include "scope.hpp"
 #include "compile_error.hpp"
 #include "location.hpp"
+#include "scope.hpp"
+#include "type.hpp"
 
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
-#include <optional>
 
 namespace typedlua::ast {
 
 class Node {
 public:
     virtual ~Node() = default;
-    
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        // do nothing
-    }
 
-    virtual void dump(std::ostream& out) const {
-        out << "--[[NOT IMPLEMENTED]]";
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
+
+    virtual void dump(std::ostream& out) const;
 
     Location location;
 };
@@ -37,9 +33,8 @@ inline std::ostream& operator<<(std::ostream& out, const Node& n) {
 class NExpr : public Node {
 public:
     virtual Type get_type(const Scope& scope) const = 0;
-    virtual void check_expect(Scope& parent_scope, const Type& expected, std::vector<CompileError>& errors) const {
-        check(parent_scope, errors);
-    }
+
+    virtual void check_expect(Scope& parent_scope, const Type& expected, std::vector<CompileError>& errors) const;
 };
 
 class NBlock : public Node {
@@ -47,27 +42,14 @@ public:
     std::vector<std::unique_ptr<Node>> children;
     bool scoped = false;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        auto this_scope = Scope(&parent_scope);
-        for (const auto& child : children) {
-            child->check(this_scope, errors);
-        }
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        if (scoped) out << "do\n";
-        for (const auto& child : children) {
-            out << *child << "\n";
-        }
-        if (scoped) out << "end";
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NType : public Node {
 public:
-    virtual void dump(std::ostream& out) const override final {
-        throw std::logic_error("Types cannot be emitted");
-    }
+    virtual void dump(std::ostream& out) const override final;
 
     virtual Type get_type(const Scope& scope) const = 0;
 };
@@ -75,174 +57,92 @@ public:
 class NNameDecl : public Node {
 public:
     NNameDecl() = default;
-    NNameDecl(std::string name) : name(std::move(name)) {}
-    NNameDecl(std::string name, std::unique_ptr<NType> type) : name(std::move(name)), type(std::move(type)) {}
+    NNameDecl(std::string name);
+    NNameDecl(std::string name, std::unique_ptr<NType> type);
     std::string name;
     std::unique_ptr<NType> type;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        if (type) type->check(parent_scope, errors);
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        out << name;
-    }
+    virtual void dump(std::ostream& out) const override;
 
-    Type get_type(const Scope& scope) const {
-        if (type) {
-            return type->get_type(scope);
-        } else {
-            return Type::make_any();
-        }
-    }
+    Type get_type(const Scope& scope) const;
 };
 
 class NTypeName : public NType {
 public:
     NTypeName() = default;
-    NTypeName(std::string name) : name(std::move(name)) {}
+    NTypeName(std::string name);
     std::string name;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        if (!parent_scope.get_type(name)) {
-            errors.emplace_back("Type `" + name + "` not in scope", location);
-        }
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual Type get_type(const Scope& scope) const override {
-        if (auto type = scope.get_type(name)) {
-            return *type;
-        } else {
-            return Type::make_any();
-        }
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NTypeFunctionParam : public Node {
 public:
     NTypeFunctionParam() = default;
-    NTypeFunctionParam(std::string name, std::unique_ptr<NType> type) : name(std::move(name)), type(std::move(type)) {}
+    NTypeFunctionParam(std::string name, std::unique_ptr<NType> type);
     std::string name;
     std::unique_ptr<NType> type;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        type->check(parent_scope, errors);
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        out << name << ":" << *type;
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NTypeFunction : public NType {
 public:
     NTypeFunction() = default;
-    NTypeFunction(std::vector<NTypeFunctionParam> p, std::unique_ptr<NType> r, bool v) :
-        params(std::move(p)),
-        ret(std::move(r)),
-        is_variadic(v) {}
+    NTypeFunction(std::vector<NTypeFunctionParam> p, std::unique_ptr<NType> r, bool v);
     std::vector<NNameDecl> generic_params;
     std::vector<NTypeFunctionParam> params;
     std::unique_ptr<NType> ret;
     bool is_variadic;
     mutable Type cached_type;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        auto scope = Scope(&parent_scope);
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        std::vector<NameType> genparams;
-        std::vector<Type> paramtypes;
-
-        for (auto i = 0u; i < generic_params.size(); ++i) {
-            const auto& gparam = generic_params[i];
-            gparam.check(scope, errors);
-            scope.add_type(gparam.name, Type::make_genparam(i));
-            genparams.push_back({gparam.name, gparam.get_type(scope)});
-        }
-
-        for (const auto& param : params) {
-            param.check(scope, errors);
-            paramtypes.push_back(param.type->get_type(scope));
-        }
-
-        ret->check(scope, errors);
-
-        cached_type = Type::make_function(
-            std::move(genparams),
-            std::move(paramtypes),
-            ret->get_type(scope),
-            is_variadic);
-    }
-
-    virtual Type get_type(const Scope& parent_scope) const override {
-        return cached_type;
-    }
+    virtual Type get_type(const Scope& parent_scope) const override;
 };
 
 class NTypeTuple : public NType {
 public:
     NTypeTuple() = default;
-    NTypeTuple(std::vector<NTypeFunctionParam> p, bool v) : params(std::move(p)), variadic(v) {}
+    NTypeTuple(std::vector<NTypeFunctionParam> p, bool v);
     std::vector<NTypeFunctionParam> params;
     bool variadic;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        for (const auto& param : params) {
-            param.check(parent_scope, errors);
-        }
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual Type get_type(const Scope& scope) const override {
-        std::vector<Type> paramtypes;
-        for (const auto& param : params) {
-            paramtypes.push_back(param.type->get_type(scope));
-        }
-        return Type::make_tuple(std::move(paramtypes), variadic);
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NTypeSum : public NType {
 public:
     NTypeSum() = default;
-    NTypeSum(std::unique_ptr<NType> l, std::unique_ptr<NType> r): lhs(std::move(l)), rhs(std::move(r)) {}
+    NTypeSum(std::unique_ptr<NType> l, std::unique_ptr<NType> r);
     std::unique_ptr<NType> lhs;
     std::unique_ptr<NType> rhs;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        lhs->check(parent_scope, errors);
-        rhs->check(parent_scope, errors);
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual Type get_type(const Scope& scope) const override {
-        return lhs->get_type(scope) | rhs->get_type(scope);
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NIndex : public Node {
 public:
     NIndex() = default;
-    NIndex(std::unique_ptr<NType> k, std::unique_ptr<NType> v) : key(std::move(k)), val(std::move(v)) {}
+    NIndex(std::unique_ptr<NType> k, std::unique_ptr<NType> v);
     std::unique_ptr<NType> key;
     std::unique_ptr<NType> val;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        key->check(parent_scope, errors);
-        val->check(parent_scope, errors);
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        auto ktype = key->get_type(parent_scope);
+    virtual void dump(std::ostream& out) const override;
 
-        if (is_assignable(ktype, LuaType::NIL).yes) {
-            errors.emplace_back("Key type must not be compatible with `nil`", key->location);
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "[" << *key << "]:" << *val;
-    }
-
-    KeyValPair get_kvp(const Scope& scope) const {
-        return {key->get_type(scope), val->get_type(scope)};
-    }
+    KeyValPair get_kvp(const Scope& scope) const;
 };
 
 class NIndexList : public Node {
@@ -250,46 +150,22 @@ public:
     NIndexList() = default;
     std::vector<std::unique_ptr<NIndex>> indexes;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        for (const auto& index : indexes) {
-            index->check(parent_scope, errors);
-        }
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        bool first = true;
-        for (const auto& index : indexes) {
-            if (!first) {
-                out << ";";
-            }
-            out << *index;
-            first = false;
-        }
-    }
-
-    std::vector<KeyValPair> get_types(const Scope& scope) const {
-        std::vector<KeyValPair> rv;
-        for (const auto& index : indexes) {
-            rv.push_back(index->get_kvp(scope));
-        }
-        return rv;
-    }
+    virtual void dump(std::ostream& out) const override;
+    std::vector<KeyValPair> get_types(const Scope& scope) const;
 };
 
 class NFieldDecl : public Node {
 public:
     NFieldDecl() = default;
-    NFieldDecl(std::string n, std::unique_ptr<NType> t) : name(std::move(n)), type(std::move(t)) {}
+    NFieldDecl(std::string n, std::unique_ptr<NType> t);
     std::string name;
     std::unique_ptr<NType> type;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        type->check(parent_scope, errors);
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        out << name << ":" << *type;
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NFieldDeclList : public Node {
@@ -298,331 +174,120 @@ public:
     std::vector<std::unique_ptr<NFieldDecl>> fields;
     mutable FieldMap cached_fields;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        for (const auto& field : fields) {
-            field->check(parent_scope, errors);
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-            auto iter = std::find_if(cached_fields.begin(), cached_fields.end(), [&](NameType& fd) {
-                return fd.name == field->name;
-            });
+    virtual void dump(std::ostream& out) const override;
 
-            if (iter != cached_fields.end()) {
-                errors.emplace_back("Duplicate table key '" + field->name + "'", location);
-                iter->type = iter->type | field->type->get_type(parent_scope);
-            } else {
-                cached_fields.push_back({field->name, field->type->get_type(parent_scope)});
-            }
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        bool first = true;
-        for (const auto& field : fields) {
-            if (!first) {
-                out << ";";
-            }
-            out << *field;
-            first = false;
-        }
-    }
-
-    FieldMap get_types(const Scope& scope) const {
-        return cached_fields;
-    }
+    FieldMap get_types(const Scope& scope) const;
 };
 
 class NTypeTable : public NType {
 public:
     NTypeTable() = default;
-    NTypeTable(std::unique_ptr<NIndexList> i, std::unique_ptr<NFieldDeclList> f) : indexlist(std::move(i)), fieldlist(std::move(f)) {}
+    NTypeTable(std::unique_ptr<NIndexList> i, std::unique_ptr<NFieldDeclList> f);
     std::unique_ptr<NIndexList> indexlist;
     std::unique_ptr<NFieldDeclList> fieldlist;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        if (indexlist) indexlist->check(parent_scope, errors);
-        if (fieldlist) fieldlist->check(parent_scope, errors);
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual Type get_type(const Scope& scope) const override {
-        std::vector<KeyValPair> indexes;
-        FieldMap fields;
-
-        if (indexlist) indexes = indexlist->get_types(scope);
-        if (fieldlist) fields = fieldlist->get_types(scope);
-
-        return Type::make_table(std::move(indexes), std::move(fields));
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NTypeLiteralBoolean : public NType {
 public:
     NTypeLiteralBoolean() = default;
-    NTypeLiteralBoolean(bool v) : value(v) {}
+    NTypeLiteralBoolean(bool v);
     bool value;
 
-    virtual Type get_type(const Scope& scope) const override {
-        return Type::make_literal(value);
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NTypeLiteralNumber : public NType {
 public:
     NTypeLiteralNumber() = default;
-    NTypeLiteralNumber(const std::string& s) : value(s) {}
+    NTypeLiteralNumber(const std::string& s);
     NumberRep value;
 
-    virtual Type get_type(const Scope& scope) const override {
-        return Type::make_literal(value);
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NTypeLiteralString : public NType {
 public:
     NTypeLiteralString() = default;
-    NTypeLiteralString(std::string_view s) : value(normalize_quotes(s)) {}
+    NTypeLiteralString(std::string_view s);
     std::string value;
 
-    virtual Type get_type(const Scope& scope) const override {
-        return Type::make_literal(value);
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NInterface : public Node {
 public:
     NInterface() = default;
-    NInterface(std::string n, std::unique_ptr<NType> t) : name(std::move(n)), type(std::move(t)) {}
+    NInterface(std::string n, std::unique_ptr<NType> t);
     std::string name;
     std::unique_ptr<NType> type;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        if (auto oldtype = parent_scope.get_type(name)) {
-            errors.emplace_back(CompileError::Severity::WARNING, "Interface `" + name + "` shadows existing type", location);
-        }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        auto& deferred = parent_scope.get_deferred_types();
-        const auto deferred_id = deferred.reserve(name);
-
-        parent_scope.add_type(name, Type::make_deferred(deferred, deferred_id));
-        type->check(parent_scope, errors);
-
-        deferred.set(deferred_id, type->get_type(parent_scope));
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        // do nothing
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NIdent : public NExpr {
 public:
     NIdent() = default;
-    NIdent(std::string v) : name(std::move(v)) {}
+    NIdent(std::string v);
     std::string name;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        if (!parent_scope.get_type_of(name)) {
-            fail_common(parent_scope, errors);
-        }
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void check_expect(Scope& parent_scope, const Type& expected, std::vector<CompileError>& errors) const {
-        if (auto type = parent_scope.get_type_of(name)) {
-            if (type->get_tag() == Type::Tag::DEFERRED) {
-                const auto& defer = type->get_deferred();
+    virtual void check_expect(Scope& parent_scope, const Type& expected, std::vector<CompileError>& errors) const;
 
-                if (!defer.collection->is_narrowing(defer.id)) {
-                    return;
-                }
+    virtual void dump(std::ostream& out) const override;
 
-                const auto& current_type = defer.collection->get(defer.id);
-
-                auto narrowed_type = current_type | expected;
-
-                defer.collection->set(defer.id, std::move(narrowed_type));
-            }
-        } else {
-            fail_common(parent_scope, errors);
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << name;
-    }
-
-    virtual Type get_type(const Scope& scope) const override {
-        if (auto type = scope.get_type_of(name)) {
-            return *type;
-        } else {
-            return Type::make_any();
-        }
-    }
+    virtual Type get_type(const Scope& scope) const override;
 
 private:
-    void fail_common(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        errors.emplace_back("Name `" + name + "` is not in scope", location);
-        // Prevent further type errors for this name
-        parent_scope.add_name(name, Type::make_any());
-    }
+    void fail_common(Scope& parent_scope, std::vector<CompileError>& errors) const;
 };
 
 class NSubscript : public NExpr {
 public:
     NSubscript() = default;
-    NSubscript(std::unique_ptr<NExpr> p, std::unique_ptr<NExpr> s) :
-        prefix(std::move(p)),
-        subscript(std::move(s)) {}
+    NSubscript(std::unique_ptr<NExpr> p, std::unique_ptr<NExpr> s);
     std::unique_ptr<NExpr> prefix;
     std::unique_ptr<NExpr> subscript;
     mutable std::optional<Type> cached_type;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        prefix->check(parent_scope, errors);
-        subscript->check(parent_scope, errors);
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        auto prefixtype = prefix->get_type(parent_scope);
-        auto keytype = subscript->get_type(parent_scope);
+    virtual void check_expect(Scope& parent_scope, const Type& expected, std::vector<CompileError>& errors) const;
 
-        check_common(prefixtype, keytype, parent_scope, errors);
-    }
+    virtual void dump(std::ostream& out) const override;
 
-    virtual void check_expect(Scope& parent_scope, const Type& expected, std::vector<CompileError>& errors) const {
-        prefix->check(parent_scope, errors);
-        subscript->check(parent_scope, errors);
-
-        auto prefixtype = prefix->get_type(parent_scope);
-        auto keytype = subscript->get_type(parent_scope);
-
-        if (prefixtype.get_tag() == Type::Tag::DEFERRED) {
-            const auto& defer = prefixtype.get_deferred();
-
-            if (!defer.collection->is_narrowing(defer.id)) {
-                return check_common(prefixtype, keytype, parent_scope, errors);
-            }
-
-            const auto& current_type = defer.collection->get(defer.id);
-
-            if (current_type.get_tag() != Type::Tag::TABLE) {
-                return check_common(prefixtype, keytype, parent_scope, errors);
-            }
-
-            auto narrowed_type = narrow_index(current_type, keytype, expected);
-
-            defer.collection->set(defer.id, std::move(narrowed_type));
-        } else {
-            return check_common(prefixtype, keytype, parent_scope, errors);
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << *prefix << "[" << *subscript << "]";
-    }
-
-    virtual Type get_type(const Scope& scope) const override {
-        if (cached_type) {
-            return *cached_type;
-        } else {
-            return Type::make_any();
-        }
-    }
+    virtual Type get_type(const Scope& scope) const override;
 
 private:
-    void check_common(const Type& prefixtype, const Type& keytype, Scope& parent_scope, std::vector<CompileError>& errors) const {
-        std::vector<std::string> notes;
-
-        auto result = get_index_type(prefixtype, keytype, notes);
-
-        if (!result) {
-            notes.push_back("Could not find index `" + to_string(keytype) + "` in `" + to_string(prefixtype) + "`");
-        }
-
-        if (!notes.empty()) {
-            std::string msg;
-            for (const auto& note : notes) {
-                msg = note + "\n" + msg;
-            }
-            errors.emplace_back(msg, location);
-        }
-
-        cached_type = std::move(result);
-    }
+    void check_common(const Type& prefixtype, const Type& keytype, Scope& parent_scope, std::vector<CompileError>& errors) const;
 };
 
 class NTableAccess : public NExpr {
 public:
     NTableAccess() = default;
-    NTableAccess(std::unique_ptr<NExpr> p, std::string n) :
-        prefix(std::move(p)),
-        name(std::move(n)) {}
+    NTableAccess(std::unique_ptr<NExpr> p, std::string n);
     std::unique_ptr<NExpr> prefix;
     std::string name;
     mutable std::optional<Type> cached_type;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        prefix->check(parent_scope, errors);
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        auto prefixtype = prefix->get_type(parent_scope);
+    virtual void check_expect(Scope& parent_scope, const Type& expected, std::vector<CompileError>& errors) const;
 
-        return check_common(prefixtype, parent_scope, errors);
-    }
+    virtual void dump(std::ostream& out) const override;
 
-    virtual void check_expect(Scope& parent_scope, const Type& expected, std::vector<CompileError>& errors) const {
-        prefix->check(parent_scope, errors);
-
-        auto prefixtype = prefix->get_type(parent_scope);
-
-        if (prefixtype.get_tag() == Type::Tag::DEFERRED) {
-            const auto& defer = prefixtype.get_deferred();
-
-            if (!defer.collection->is_narrowing(defer.id)) {
-                return check_common(prefixtype, parent_scope, errors);
-            }
-
-            const auto& current_type = defer.collection->get(defer.id);
-
-            if (current_type.get_tag() != Type::Tag::TABLE) {
-                return check_common(prefixtype, parent_scope, errors);
-            }
-
-            auto narrowed_type = narrow_field(current_type, name, expected);
-
-            defer.collection->set(defer.id, std::move(narrowed_type));
-        } else {
-            return check_common(prefixtype, parent_scope, errors);
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << *prefix << "." << name;
-    }
-
-    virtual Type get_type(const Scope& scope) const override {
-        if (cached_type) {
-            return *cached_type;
-        } else {
-            return Type::make_any();
-        }
-    }
+    virtual Type get_type(const Scope& scope) const override;
 
 private:
-    void check_common(const Type& prefixtype, Scope& parent_scope, std::vector<CompileError>& errors) const {
-        std::vector<std::string> notes;
-
-        auto result = get_field_type(prefixtype, name, notes);
-
-        if (!result) {
-            notes.push_back("Could not find field '" + name + "' in `" + to_string(prefixtype) + "`");
-        }
-
-        if (!notes.empty()) {
-            std::string msg;
-            for (const auto& note : notes) {
-                msg = note + "\n" + msg;
-            }
-            errors.emplace_back(msg, location);
-        }
-
-        cached_type = std::move(result);
-    }
+    void check_common(const Type& prefixtype, Scope& parent_scope, std::vector<CompileError>& errors) const;
 };
 
 class NArgSeq : public Node {
@@ -630,654 +295,210 @@ public:
     NArgSeq() = default;
     std::vector<std::unique_ptr<NExpr>> args;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        for (const auto& arg : args) {
-            arg->check(parent_scope, errors);
-        }
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        bool first = true;
-        for (const auto& arg : args) {
-            if (!first) {
-                out << ",";
-            }
-            out << *arg;
-            first = false;
-        }
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NFunctionCall : public NExpr {
 public:
     NFunctionCall() = default;
-    NFunctionCall(std::unique_ptr<NExpr> p, std::unique_ptr<NArgSeq> a) :
-        prefix(std::move(p)),
-        args(std::move(a)) {}
+    NFunctionCall(std::unique_ptr<NExpr> p, std::unique_ptr<NArgSeq> a);
     std::unique_ptr<NExpr> prefix;
     std::unique_ptr<NArgSeq> args;
     mutable std::optional<Type> cached_rettype;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        prefix->check(parent_scope, errors);
-        if (args) args->check(parent_scope, errors);
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        auto prefixtype = prefix->get_type(parent_scope);
+    virtual void dump(std::ostream& out) const override;
 
-        switch (prefixtype.get_tag()) {
-            case Type::Tag::ANY:
-                break;
-            case Type::Tag::FUNCTION: {
-                const auto& func = prefixtype.get_function();
-
-                auto rhs = std::vector<Type>{};
-
-                // Convert args into a semi-tuple
-                if (args) {
-                    rhs.reserve(args->args.size());
-
-                    for (const auto& expr : args->args) {
-                        rhs.push_back(expr->get_type(parent_scope));
-                    }
-                }
-
-                if (rhs.size() > func.params.size() && !func.variadic) {
-                    errors.emplace_back("Too many arguments for non-variadic function", location);
-                } else {
-                    if (rhs.size() < func.params.size()) {
-                        std::fill_n(
-                            std::back_inserter(rhs),
-                            func.params.size() - rhs.size(),
-                            Type::make_luatype(LuaType::NIL));
-                    }
-                    
-                    std::vector<std::optional<Type>> genparams_inferred;
-
-                    genparams_inferred.resize(func.genparams.size());
-
-                    const auto sz = std::min(rhs.size(), func.params.size());
-                    
-                    for (auto i = 0u; i < sz; ++i) {
-                        const auto& rhstype = rhs[i];
-                        const auto& lhstype = func.params[i];
-
-                        auto r = check_param(lhstype, rhstype, func.genparams, genparams_inferred);
-
-                        if (!r.yes) {
-                            errors.emplace_back(to_string(r), location);
-                        } else if (!r.messages.empty()) {
-                            errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
-                        }
-                    }
-
-                    cached_rettype = apply_genparams(genparams_inferred, *func.ret);
-                }
-            } break;
-            default:
-                errors.emplace_back("Cannot call non-function type `" + to_string(prefixtype) + "`", location);
-                break;
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << *prefix << "(";
-        if (args) out << *args;
-        out << ")";
-    }
-
-    virtual Type get_type(const Scope& scope) const override {
-        return cached_rettype.value_or(Type::make_any());
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NFunctionSelfCall : public NExpr {
 public:
     NFunctionSelfCall() = default;
-    NFunctionSelfCall(std::unique_ptr<NExpr> p, std::string n, std::unique_ptr<NArgSeq> a) :
-        prefix(std::move(p)),
-        name(std::move(n)),
-        args(std::move(a)) {}
+    NFunctionSelfCall(std::unique_ptr<NExpr> p, std::string n, std::unique_ptr<NArgSeq> a);
     std::unique_ptr<NExpr> prefix;
     std::string name;
     std::unique_ptr<NArgSeq> args;
     mutable std::optional<Type> cached_type;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        prefix->check(parent_scope, errors);
-        if (args) args->check(parent_scope, errors);
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        auto prefixtype = prefix->get_type(parent_scope);
+    virtual void dump(std::ostream& out) const override;
 
-        std::vector<std::string> notes;
-
-        auto functype = get_field_type(prefixtype, name, notes);
-
-        std::optional<Type> rettype;
-
-        if (!functype) {
-            notes.push_back("Could not find method '" + name + "' in type `" + to_string(prefixtype) + "`");
-        } else {
-            rettype = get_return_type(*functype, notes);
-
-            switch ((*functype).get_tag()) {
-                case Type::Tag::ANY:
-                    break;
-                case Type::Tag::FUNCTION: {
-                    const auto& func = (*functype).get_function();
-
-                    auto rhs = std::vector<Type>{};
-
-                    if (args) {
-                        rhs.reserve(args->args.size() + 1);
-                    } else {
-                        rhs.reserve(1);
-                    }
-
-                    rhs.push_back(prefixtype);
-
-                    if (args) {
-                        for (const auto& expr : args->args) {
-                            rhs.push_back(expr->get_type(parent_scope));
-                        }
-                    }
-
-                    const auto lhstype = Type::make_tuple(func.params, func.variadic);
-                    const auto rhstype = Type::make_tuple(std::move(rhs), false);
-                    const auto r = is_assignable(lhstype, rhstype);
-
-                    if (!r.yes) {
-                        errors.emplace_back(to_string(r), location);
-                    } else if (!r.messages.empty()) {
-                        errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
-                    }
-                } break;
-                default:
-                    errors.emplace_back("Cannot call non-function type `" + to_string(*functype) + "`", location);
-                    break;
-            }
-        }
-
-        if (!notes.empty()) {
-            std::string msg;
-            for (const auto& note : notes) {
-                msg = note + "\n" + msg;
-            }
-            errors.emplace_back(msg, location);
-        }
-
-        cached_type = std::move(rettype);
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << *prefix << ":" << name << "(";
-        if (args) out << *args;
-        out << ")";
-    }
-
-    virtual Type get_type(const Scope& scope) const override {
-        if (cached_type) {
-            return *cached_type;
-        } else {
-            return Type::make_any();
-        }
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NNumberLiteral : public NExpr {
 public:
     NNumberLiteral() = default;
-    NNumberLiteral(std::string v) : value(std::move(v)) {}
+    NNumberLiteral(std::string v);
     std::string value;
 
-    virtual void dump(std::ostream& out) const override {
-        out << value;
-    }
+    virtual void dump(std::ostream& out) const override;
 
-    virtual Type get_type(const Scope& scope) const override {
-        return Type::make_literal(NumberRep(value));
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NAssignment : public Node {
 public:
     NAssignment() = default;
-    NAssignment(std::vector<std::unique_ptr<NExpr>> v, std::vector<std::unique_ptr<NExpr>> e) :
-        vars(std::move(v)),
-        exprs(std::move(e)) {}
+    NAssignment(std::vector<std::unique_ptr<NExpr>> v, std::vector<std::unique_ptr<NExpr>> e);
     std::vector<std::unique_ptr<NExpr>> vars;
     std::vector<std::unique_ptr<NExpr>> exprs;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        std::vector<Type> lhs;
-        std::vector<Type> rhs;
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        lhs.reserve(vars.size());
-        rhs.reserve(exprs.size());
-
-        for (const auto& expr : exprs) {
-            expr->check(parent_scope, errors);
-            rhs.push_back(expr->get_type(parent_scope));
-        }
-
-        for (auto i = 0u; i < vars.size(); ++i) {
-            auto& var = vars[i];
-            if (i < rhs.size()) {
-                var->check_expect(parent_scope, rhs[i], errors);
-            } else {
-                var->check(parent_scope, errors);
-            }
-            lhs.push_back(var->get_type(parent_scope));
-        }
-
-        const auto lhstype = Type::make_reduced_tuple(std::move(lhs));
-        const auto rhstype = Type::make_reduced_tuple(std::move(rhs));
-        const auto r = is_assignable(lhstype, rhstype);
-
-        if (!r.yes) {
-            errors.emplace_back(to_string(r), location);
-        } else if (!r.messages.empty()) {
-            errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        bool first = true;
-        for (const auto& var : vars) {
-            if (!first) {
-                out << ",";
-            }
-            out << *var;
-            first = false;
-        }
-
-        out << "=";
-
-        first = true;
-        for (const auto& expr : exprs) {
-            if (!first) {
-                out << ",";
-            }
-            out << *expr;
-            first = false;
-        }
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NEmpty : public Node {
 public:
     NEmpty() = default;
 
-    virtual void dump(std::ostream& out) const override {
-        out << ";";
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NLabel : public Node {
 public:
     NLabel() = default;
-    NLabel(std::string n) : name(std::move(n)) {}
+    NLabel(std::string n);
     std::string name;
 
-    virtual void dump(std::ostream& out) const override {
-        out << "::" << name << "::";
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NBreak : public Node {
 public:
     NBreak() = default;
 
-    virtual void dump(std::ostream& out) const override {
-        out << "break";
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NGoto : public Node {
 public:
     NGoto() = default;
-    NGoto(std::string n) : name(std::move(n)) {}
+    NGoto(std::string n);
     std::string name;
 
-    virtual void dump(std::ostream& out) const override {
-        out << "goto " << name;
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NWhile : public Node {
 public:
     NWhile() = default;
-    NWhile(std::unique_ptr<NExpr> c, std::unique_ptr<NBlock> b) :
-        condition(std::move(c)),
-        block(std::move(b)) {}
+    NWhile(std::unique_ptr<NExpr> c, std::unique_ptr<NBlock> b);
     std::unique_ptr<NExpr> condition;
     std::unique_ptr<NBlock> block;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        condition->check(parent_scope, errors);
-        block->check(parent_scope, errors);
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        out << "while " << *condition << " do\n";
-        out << *block;
-        out << "end";
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NRepeat : public Node {
 public:
     NRepeat() = default;
-    NRepeat(std::unique_ptr<NBlock> b, std::unique_ptr<NExpr> u) :
-        block(std::move(b)),
-        until(std::move(u)) {}
+    NRepeat(std::unique_ptr<NBlock> b, std::unique_ptr<NExpr> u);
     std::unique_ptr<NBlock> block;
     std::unique_ptr<NExpr> until;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        block->check(parent_scope, errors);
-        until->check(parent_scope, errors);
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        out << "repeat\n";
-        out << *block;
-        out << "until " << *until;
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NElseIf : public Node {
 public:
     NElseIf() = default;
-    NElseIf(std::unique_ptr<NExpr> c, std::unique_ptr<NBlock> b) :
-        condition(std::move(c)),
-        block(std::move(b)) {}
+    NElseIf(std::unique_ptr<NExpr> c, std::unique_ptr<NBlock> b);
     std::unique_ptr<NExpr> condition;
     std::unique_ptr<NBlock> block;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        condition->check(parent_scope, errors);
-        block->check(parent_scope, errors);
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        out << "elseif " << *condition << " then\n";
-        out << *block;
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NElse : public Node {
 public:
     NElse() = default;
-    NElse(std::unique_ptr<NBlock> b) : block(std::move(b)) {}
+    NElse(std::unique_ptr<NBlock> b);
     std::unique_ptr<NBlock> block;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        block->check(parent_scope, errors);
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        out << "else\n";
-        out << *block;
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NIf : public Node {
 public:
     NIf() = default;
-    NIf(std::unique_ptr<NExpr> c, std::unique_ptr<NBlock> b, std::vector<std::unique_ptr<NElseIf>> ei, std::unique_ptr<NElse> e) :
-        condition(std::move(c)),
-        block(std::move(b)),
-        elseifs(std::move(ei)),
-        else_(std::move(e)) {}
+    NIf(std::unique_ptr<NExpr> c, std::unique_ptr<NBlock> b, std::vector<std::unique_ptr<NElseIf>> ei, std::unique_ptr<NElse> e);
     std::unique_ptr<NExpr> condition;
     std::unique_ptr<NBlock> block;
     std::vector<std::unique_ptr<NElseIf>> elseifs;
     std::unique_ptr<NElse> else_;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        condition->check(parent_scope, errors);
-        block->check(parent_scope, errors);
-        for (const auto& elseif : elseifs) {
-            elseif->check(parent_scope, errors);
-        }
-        if (else_) else_->check(parent_scope, errors);
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        out << "if " << *condition << " then\n";
-        out << *block;
-        for (const auto& elseif : elseifs) {
-            out << *elseif;
-        }
-        if (else_) out << *else_;
-        out << "end";
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NForNumeric : public Node {
 public:
     NForNumeric() = default;
-    NForNumeric(std::string n, std::unique_ptr<NExpr> b, std::unique_ptr<NExpr> e, std::unique_ptr<NExpr> s, std::unique_ptr<NBlock> k) :
-        name(std::move(n)),
-        begin(std::move(b)),
-        end(std::move(e)),
-        step(std::move(s)),
-        block(std::move(k)) {}
+    NForNumeric(std::string n, std::unique_ptr<NExpr> b, std::unique_ptr<NExpr> e, std::unique_ptr<NExpr> s, std::unique_ptr<NBlock> k);
     std::string name;
     std::unique_ptr<NExpr> begin;
     std::unique_ptr<NExpr> end;
     std::unique_ptr<NExpr> step;
     std::unique_ptr<NBlock> block;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        begin->check(parent_scope, errors);
-        end->check(parent_scope, errors);
-        if (step) step->check(parent_scope, errors);
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        auto this_scope = Scope(&parent_scope);
-        this_scope.add_name(name, Type(LuaType::NUMBER));
-
-        block->check(this_scope, errors);
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "for " << name << "=" << *begin << "," << *end;
-        if (step) out << "," << *step;
-        out << " do\n";
-        out << *block;
-        out << "end";
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NForGeneric : public Node {
 public:
     NForGeneric() = default;
-    NForGeneric(std::vector<NNameDecl> n, std::vector<std::unique_ptr<NExpr>> e, std::unique_ptr<NBlock> b) :
-        names(std::move(n)),
-        exprs(std::move(e)),
-        block(std::move(b)) {}
+    NForGeneric(std::vector<NNameDecl> n, std::vector<std::unique_ptr<NExpr>> e, std::unique_ptr<NBlock> b);
     std::vector<NNameDecl> names;
     std::vector<std::unique_ptr<NExpr>> exprs;
     std::unique_ptr<NBlock> block;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        for (const auto &name : names) {
-            if (parent_scope.get_type_of(name.name)) {
-                errors.emplace_back(CompileError::Severity::WARNING, "For-loop variable shadows name `" + name.name + "`", location);
-            }
-            name.check(parent_scope, errors);
-        }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        for (const auto& expr : exprs) {
-            expr->check(parent_scope, errors);
-        }
-
-        auto this_scope = Scope(&parent_scope);
-        for (const auto& name : names) {
-            this_scope.add_name(name.name, name.get_type(parent_scope));
-        }
-
-        block->check(this_scope, errors);
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "for ";
-        bool first = true;
-        for (const auto& name : names) {
-            if (!first) {
-                out << ",";
-            }
-            out << name;
-            first = false;
-        }
-        out << " in ";
-        first = true;
-        for (const auto& expr : exprs ) {
-            if (!first) {
-                out << ",";
-            }
-            out << *expr;
-            first = false;
-        }
-        out << " do\n";
-        out << *block;
-        out << "end";
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NFuncParams : public Node {
 public:
     NFuncParams() = default;
-    NFuncParams(std::vector<NNameDecl> n, bool v) :
-        names(std::move(n)),
-        is_variadic(v) {}
+    NFuncParams(std::vector<NNameDecl> n, bool v);
     std::vector<NNameDecl> names;
     bool is_variadic = false;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        for (const auto& name : names) {
-            if (parent_scope.get_type_of(name.name)) {
-                errors.emplace_back(CompileError::Severity::WARNING, "Function parameter shadows name `" + name.name + "`", location);
-            }
-            name.check(parent_scope, errors);
-        }
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        bool first = true;
-        for (const auto& name : names) {
-            if (!first) {
-                out << ",";
-            }
-            out << name;
-            first = false;
-        }
-        if (is_variadic) {
-            if (!first) {
-                out << ",";
-            }
-            out << "...";
-        }
-    }
+    virtual void dump(std::ostream& out) const override;
 
-    void add_to_scope(Scope& scope) const {
-        for (const auto& name : names) {
-            scope.add_name(name.name, name.get_type(scope));
-        }
-        if (is_variadic) {
-            scope.set_dots_type(Type::make_any());
-        } else {
-            scope.disable_dots();
-        }
-    }
+    void add_to_scope(Scope& scope) const;
 
-    std::vector<Type> get_types(const Scope& scope) const {
-        std::vector<Type> rv;
-        for (const auto& name : names) {
-            rv.push_back(name.get_type(scope));
-        }
-        return rv;
-    }
+    std::vector<Type> get_types(const Scope& scope) const;
 };
 
 class FunctionBase {
 public:
     FunctionBase() = default;
-    FunctionBase(std::vector<NNameDecl> g, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b) :
-        generic_params(std::move(g)),
-        params(std::move(p)),
-        ret(std::move(r)),
-        block(std::move(b)) {}
+    FunctionBase(std::vector<NNameDecl> g, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b);
 
-    Type check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        auto return_type = Type{};
+    Type check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        auto setup_scope = [&] {
-            auto scope = Scope(&parent_scope);
-
-            // Create light types for parameter checking
-            for (auto i = 0u; i < generic_params.size(); ++i) {
-                const auto& gparam = generic_params[i];
-                gparam.check(scope, errors);
-                scope.add_type(gparam.name, Type::make_genparam(i));
-            }
-
-            params->check(scope, errors);
-
-            // Use interface types in function body
-            for (const auto& gparam : generic_params) {
-                scope.add_type(gparam.name, gparam.get_type(scope));
-            }
-
-            params->add_to_scope(scope);
-
-            if (params->is_variadic) {
-                scope.set_dots_type(Type::make_tuple({}, true));
-            } else {
-                scope.disable_dots();
-            }
-
-            if (ret) ret->check(scope, errors);
-
-            return scope;
-        };
-
-        if (ret) {
-            auto this_scope = setup_scope();
-
-            return_type = ret->get_type(this_scope);
-            this_scope.set_return_type(return_type);
-
-            block->check(this_scope, errors);
-        } else {
-            auto this_scope = setup_scope();
-
-            this_scope.deduce_return_type();
-
-            block->check(this_scope, errors);
-
-            if (auto newret = this_scope.get_return_type()) {
-                return_type = std::move(*newret);
-            }
-        }
-
-        return return_type;
-    }
-
-    Type get_type(Scope& parent_scope, const Type& rettype) const {
-        auto scope = Scope(&parent_scope);
-
-        std::vector<NameType> genparams;
-
-        for (auto i = 0u; i < generic_params.size(); ++i) {
-            const auto& gparam = generic_params[i];
-            auto type = Type::make_genparam(i);
-            scope.add_name(gparam.name, type);
-            genparams.push_back({gparam.name, gparam.get_type(scope)});
-        }
-
-        return Type::make_function(std::move(genparams), params->get_types(scope), rettype, params->is_variadic);
-    }
+    Type get_type(Scope& parent_scope, const Type& rettype) const;
 
     std::vector<NNameDecl> generic_params;
     std::unique_ptr<NFuncParams> params;
@@ -1288,652 +509,195 @@ public:
 class NFunction : public Node {
 public:
     NFunction() = default;
-    NFunction(FunctionBase fb, std::unique_ptr<NExpr> e) :
-        base(std::move(fb)),
-        expr(std::move(e)) {}
+    NFunction(FunctionBase fb, std::unique_ptr<NExpr> e);
     FunctionBase base;
     std::unique_ptr<NExpr> expr;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        auto return_type = base.check(parent_scope, errors);
-
-        const auto functype = base.get_type(parent_scope, return_type);
-
-        expr->check_expect(parent_scope, functype, errors);
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "function " << *expr << "(" << *base.params << ")";
-        out << "\n";
-        out << *base.block;
-        out << "end";
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NSelfFunction : public Node {
 public:
     NSelfFunction() = default;
-    NSelfFunction(std::string m, std::unique_ptr<NExpr> e, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b) :
-        name(std::move(m)),
-        expr(std::move(e)),
-        params(std::move(p)),
-        ret(std::move(r)),
-        block(std::move(b)) {}
+    NSelfFunction(
+        std::string m,
+        std::unique_ptr<NExpr> e,
+        std::unique_ptr<NFuncParams> p,
+        std::unique_ptr<NType> r,
+        std::unique_ptr<NBlock> b);
     std::string name;
     std::unique_ptr<NExpr> expr;
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NType> ret;
     std::unique_ptr<NBlock> block;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        expr->check(parent_scope, errors);
-        params->check(parent_scope, errors);
-        if (ret) ret->check(parent_scope, errors);
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        const auto self_type = expr->get_type(parent_scope);
-        auto return_type = Type::make_any();
-        auto param_types = params->get_types(parent_scope);
-        param_types.insert(param_types.begin(), self_type);
-
-        if (ret) {
-            return_type = ret->get_type(parent_scope);
-
-            auto this_scope = Scope(&parent_scope);
-            params->add_to_scope(this_scope);
-            this_scope.add_name("self", self_type);
-            this_scope.set_return_type(return_type);
-
-            if (params->is_variadic) {
-                this_scope.set_dots_type(Type::make_tuple({}, true));
-            } else {
-                this_scope.disable_dots();
-            }
-
-            block->check(this_scope, errors);
-        } else {
-            auto this_scope = Scope(&parent_scope);
-            params->add_to_scope(this_scope);
-            this_scope.add_name("self", self_type);
-            this_scope.deduce_return_type();
-
-            if (params->is_variadic) {
-                this_scope.set_dots_type(Type::make_tuple({}, true));
-            } else {
-                this_scope.disable_dots();
-            }
-
-            block->check(this_scope, errors);
-
-            if (auto newret = this_scope.get_return_type()) {
-                return_type = std::move(*newret);
-            }
-        }
-
-        const auto functype = Type::make_function(param_types, std::move(return_type), params->is_variadic);
-
-        if (self_type.get_tag() == Type::Tag::DEFERRED) {
-            const auto& defer = self_type.get_deferred();
-
-            if (defer.collection->is_narrowing(defer.id)) {
-                const auto& current_type = defer.collection->get(defer.id);
-
-                if (current_type.get_tag() == Type::Tag::TABLE) {
-                    auto narrowed_type = narrow_field(current_type, name, functype);
-
-                    defer.collection->set(defer.id, std::move(narrowed_type));
-                }
-            }
-        }
-
-        std::vector<std::string> notes;
-
-        auto fieldtype = get_field_type(self_type, name, notes);
-
-        if (fieldtype) {
-            const auto r = is_assignable(*fieldtype, functype);
-
-            if (!r.yes) {
-                errors.emplace_back(to_string(r), location);
-            } else if (!r.messages.empty()) {
-                errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
-            }
-        } else {
-            if (!notes.empty()) {
-                std::string msg;
-                
-                for (const auto& note : notes) {
-                    msg = note + "\n" + msg;
-                }
-
-                msg = "Failed to deduce field type\n" + msg;
-                errors.emplace_back(msg, location);
-            }
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "function " << *expr << ":" << name << "(" << *params << ")";
-        out << "\n";
-        out << *block;
-        out << "end";
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NLocalFunction : public Node {
 public:
     NLocalFunction() = default;
-    NLocalFunction(std::string n, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b) :
-        name(std::move(n)),
-        params(std::move(p)),
-        ret(std::move(r)),
-        block(std::move(b)) {}
+    NLocalFunction(std::string n, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b);
     std::string name;
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NType> ret;
     std::unique_ptr<NBlock> block;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        params->check(parent_scope, errors);
-        if (ret) ret->check(parent_scope, errors);
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        auto paramtypes = params->get_types(parent_scope);
-
-        if (ret) {
-            auto rettype = ret->get_type(parent_scope);
-            auto functype = Type::make_function(std::move(paramtypes), rettype, params->is_variadic);
-            parent_scope.add_name(name, std::move(functype));
-
-            auto this_scope = Scope(&parent_scope);
-            params->add_to_scope(this_scope);
-            this_scope.set_return_type(std::move(rettype));
-
-            if (params->is_variadic) {
-                this_scope.set_dots_type(Type::make_tuple({}, true));
-            } else {
-                this_scope.disable_dots();
-            }
-
-            block->check(this_scope, errors);
-        } else {
-            auto functype = Type::make_function(paramtypes, Type::make_any(), params->is_variadic);
-            parent_scope.add_name(name, std::move(functype));
-
-            auto this_scope = Scope(&parent_scope);
-            params->add_to_scope(this_scope);
-            this_scope.deduce_return_type();
-
-            if (params->is_variadic) {
-                this_scope.set_dots_type(Type::make_tuple({}, true));
-            } else {
-                this_scope.disable_dots();
-            }
-
-            block->check(this_scope, errors);
-
-            if (auto newret = this_scope.get_return_type()) {
-                auto newtype = Type::make_function(std::move(paramtypes), std::move(*newret), params->is_variadic);
-                parent_scope.add_name(name, std::move(newtype));
-            }
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "local function " << name << "(" << *params << ")";
-        out << "\n";
-        out << *block;
-        out << "end";
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NReturn : public Node {
 public:
     NReturn() = default;
-    NReturn(std::vector<std::unique_ptr<NExpr>> e) : exprs(std::move(e)) {}
+    NReturn(std::vector<std::unique_ptr<NExpr>> e);
     std::vector<std::unique_ptr<NExpr>> exprs;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        auto exprtypes = std::vector<Type>{};
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        exprtypes.reserve(exprs.size());
-
-        for (const auto& expr : exprs) {
-            expr->check(parent_scope, errors);
-            exprtypes.push_back(expr->get_type(parent_scope));
-        }
-
-        auto type = Type::make_reduced_tuple(std::move(exprtypes));
-
-        if (auto rettype = parent_scope.get_fixed_return_type()) {
-            auto r = is_assignable(*rettype, type);
-            if (!r.yes) {
-                errors.emplace_back(to_string(r), location);
-            }
-        } else {
-            parent_scope.add_return_type(type);
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "return";
-        if (!exprs.empty()) {
-            out << " ";
-            bool first = true;
-            for (const auto& expr : exprs) {
-                if (!first) {
-                    out << ",";
-                }
-                out << *expr;
-                first = false;
-            }
-        }
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NLocalVar : public Node {
 public:
     NLocalVar() = default;
-    NLocalVar(std::vector<NNameDecl> n, std::vector<std::unique_ptr<NExpr>> e) :
-        names(std::move(n)),
-        exprs(std::move(e)) {}
+    NLocalVar(std::vector<NNameDecl> n, std::vector<std::unique_ptr<NExpr>> e);
     std::vector<NNameDecl> names;
     std::vector<std::unique_ptr<NExpr>> exprs;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        for (const auto& name : names) {
-            if (parent_scope.get_type_of(name.name)) {
-                errors.emplace_back(CompileError::Severity::WARNING, "Local variable shadows name `" + name.name + "`", location);
-            }
-            name.check(parent_scope, errors);
-        }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        std::vector<Type> exprtypes;
-        for (const auto& expr : exprs) {
-            expr->check(parent_scope, errors);
-            exprtypes.push_back(expr->get_type(parent_scope));
-        }
-
-        if (!exprtypes.empty() && exprtypes.back().get_tag() == Type::Tag::TUPLE) {
-            auto tupletype = std::move(exprtypes.back());
-            exprtypes.pop_back();
-            const auto& tuple = tupletype.get_tuple();
-            exprtypes.insert(exprtypes.end(), tuple.types.begin(), tuple.types.end());
-        }
-
-        for (auto i = 0u; i < names.size(); ++i) {
-            const auto& name = names[i];
-            if (name.type) {
-                parent_scope.add_name(name.name, name.get_type(parent_scope));
-            } else if (i < exprtypes.size()) {
-                auto& exprtype = exprtypes[i];
-                if (exprtype.get_tag() == Type::Tag::LITERAL) {
-                    auto& collection = parent_scope.get_deferred_types();
-                    auto id = collection.reserve_narrow("@"+std::to_string(location.first_line));
-                    collection.set(id, std::move(exprtype));
-                    exprtype = Type::make_deferred(collection, id);
-                }
-                parent_scope.add_name(name.name, std::move(exprtype));
-            } else {
-                parent_scope.add_name(name.name, Type::make_any());
-            }
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "local ";
-        bool first = true;
-        for (const auto& name : names) {
-            if (!first) {
-                out << ",";
-            }
-            out << name;
-            first = false;
-        }
-        if (!exprs.empty()) {
-            out << "=";
-            bool first = true;
-            for (const auto& expr : exprs) {
-                if (!first) {
-                    out << ",";
-                }
-                out << *expr;
-                first = false;
-            }
-        }
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NGlobalVar : public Node {
 public:
     NGlobalVar() = default;
-    NGlobalVar(std::vector<NNameDecl> n, std::vector<std::unique_ptr<NExpr>> e) :
-        names(std::move(n)),
-        exprs(std::move(e)) {}
+    NGlobalVar(std::vector<NNameDecl> n, std::vector<std::unique_ptr<NExpr>> e);
     std::vector<NNameDecl> names;
     std::vector<std::unique_ptr<NExpr>> exprs;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        for (const auto& name : names) {
-            if (parent_scope.get_type_of(name.name)) {
-                errors.emplace_back("Global variable shadows name `" + name.name + "`", location);
-            }
-            name.check(parent_scope, errors);
-        }
-        for (const auto& expr : exprs) {
-            expr->check(parent_scope, errors);
-        }
-        for (const auto& name : names) {
-            parent_scope.add_name(name.name, name.get_type(parent_scope));
-        }
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        if (!exprs.empty()) {
-            bool first = true;
-            for (const auto& name : names) {
-                if (!first) {
-                    out << ",";
-                }
-                out << name;
-                first = false;
-            }
-            out << "=";
-            first = true;
-            for (const auto& expr : exprs) {
-                if (!first) {
-                    out << ",";
-                }
-                out << *expr;
-                first = false;
-            }
-        }
-    }
+    virtual void dump(std::ostream& out) const override;
 };
 
 class NNil : public NExpr {
 public:
-    virtual void dump(std::ostream& out) const override {
-        out << "nil";
-    }
+    virtual void dump(std::ostream& out) const override;
 
-    virtual Type get_type(const Scope& scope) const override {
-        return Type::make_luatype(LuaType::NIL);
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NBooleanLiteral : public NExpr {
 public:
     NBooleanLiteral() = default;
-    NBooleanLiteral(bool v) : value(v) {}
+    NBooleanLiteral(bool v);
     bool value;
 
-    virtual void dump(std::ostream& out) const override {
-        out << (value ? "true" : "false");
-    }
+    virtual void dump(std::ostream& out) const override;
 
-    virtual Type get_type(const Scope& scope) const override {
-        return Type::make_literal(value);
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NStringLiteral : public NExpr {
 public:
     NStringLiteral() = default;
-    NStringLiteral(std::string v) : value(std::move(v)) {}
+    NStringLiteral(std::string v);
     std::string value;
 
-    virtual void dump(std::ostream& out) const override {
-        out << value;
-    }
+    virtual void dump(std::ostream& out) const override;
 
-    virtual Type get_type(const Scope& scope) const override {
-        return Type::make_literal(normalize_quotes(value));
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NDots : public NExpr {
 public:
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        if (!parent_scope.get_dots_type()) {
-            errors.emplace_back("Scope does not contain `...`", location);
-        }
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void dump(std::ostream& out) const override {
-        out << "...";
-    }
+    virtual void dump(std::ostream& out) const override;
 
-    virtual Type get_type(const Scope& scope) const override {
-        return Type::make_any();
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NFunctionDef : public NExpr {
 public:
     NFunctionDef() = default;
-    NFunctionDef(std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b) :
-        params(std::move(p)),
-        ret(std::move(r)),
-        block(std::move(b)) {}
+    NFunctionDef(std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b);
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NType> ret;
     std::unique_ptr<NBlock> block;
     mutable std::optional<Type> deducedret;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        params->check(parent_scope, errors);
-        if (ret) ret->check(parent_scope, errors);
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        if (ret) {
-            auto rettype = ret->get_type(parent_scope);
+    virtual void dump(std::ostream& out) const override;
 
-            auto this_scope = Scope(&parent_scope);
-            params->add_to_scope(this_scope);
-            this_scope.set_return_type(std::move(rettype));
-
-            if (params->is_variadic) {
-                this_scope.set_dots_type(Type::make_tuple({}, true));
-            } else {
-                this_scope.disable_dots();
-            }
-
-            block->check(this_scope, errors);
-        } else {
-            auto this_scope = Scope(&parent_scope);
-            params->add_to_scope(this_scope);
-            this_scope.deduce_return_type();
-
-            if (params->is_variadic) {
-                this_scope.set_dots_type(Type::make_tuple({}, true));
-            } else {
-                this_scope.disable_dots();
-            }
-
-            block->check(this_scope, errors);
-
-            if (auto newret = this_scope.get_return_type()) {
-                deducedret = std::move(*newret);
-            }
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "function(" << *params << ")";
-        out << "\n";
-        out << *block;
-        out << "end";
-    }
-
-    virtual Type get_type(const Scope& scope) const override {
-        std::vector<Type> paramtypes;
-        for (const auto& name : params->names) {
-            paramtypes.push_back(name.get_type(scope));
-        }
-
-        auto rettype =
-            ret ? ret->get_type(scope) :
-            deducedret ? *deducedret :
-            Type::make_any();
-
-        return Type::make_function(std::move(paramtypes), std::move(rettype), params->is_variadic);
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NField : public Node {
 public:
-    virtual void add_to_table(
-        const Scope& scope,
-        std::vector<KeyValPair>& indexes,
-        FieldMap& fielddecls,
-        std::vector<CompileError>& errors) const = 0;
+    virtual void add_to_table(const Scope& scope, std::vector<KeyValPair>& indexes, FieldMap& fielddecls, std::vector<CompileError>& errors)
+        const = 0;
 };
 
 class NFieldExpr : public NField {
 public:
     NFieldExpr() = default;
-    NFieldExpr(std::unique_ptr<NExpr> e) : expr(std::move(e)) {}
+    NFieldExpr(std::unique_ptr<NExpr> e);
     std::unique_ptr<NExpr> expr;
-    
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        expr->check(parent_scope, errors);
-    }
 
-    virtual void dump(std::ostream& out) const override {
-        out << *expr;
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void add_to_table(
-        const Scope& scope,
-        std::vector<KeyValPair>& indexes,
-        FieldMap& fielddecls,
-        std::vector<CompileError>& errors) const override
-    {
-        auto exprtype = expr->get_type(scope);
-        for (auto& index : indexes) {
-            if (is_assignable(index.key, LuaType::NUMBER).yes) {
-                index.val = index.val | std::move(exprtype);
-                return;
-            }
-        }
-        indexes.push_back({Type::make_luatype(LuaType::NUMBER), std::move(exprtype)});
-    }
+    virtual void dump(std::ostream& out) const override;
+
+    virtual void add_to_table(const Scope& scope, std::vector<KeyValPair>& indexes, FieldMap& fielddecls, std::vector<CompileError>& errors)
+        const override;
 };
 
 class NFieldNamed : public NField {
 public:
     NFieldNamed() = default;
-    NFieldNamed(std::string k, std::unique_ptr<NExpr> v) :
-        key(std::move(k)),
-        value(std::move(v)) {}
+    NFieldNamed(std::string k, std::unique_ptr<NExpr> v);
     std::string key;
     std::unique_ptr<NExpr> value;
-    
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        value->check(parent_scope, errors);
-    }
 
-    virtual void dump(std::ostream& out) const override {
-        out << key << "=" << *value;
-    }
-
-    virtual void add_to_table(
-        const Scope& scope,
-        std::vector<KeyValPair>& indexes,
-        FieldMap& fielddecls,
-        std::vector<CompileError>& errors) const override
-    {
-        auto iter = std::find_if(fielddecls.begin(), fielddecls.end(), [&](NameType& fd) {
-            return fd.name == key;
-        });
-
-        if (iter != fielddecls.end()) {
-            errors.emplace_back("Duplicate table key '" + key + "'", location);
-            iter->type = iter->type | value->get_type(scope);
-        } else {
-            fielddecls.push_back({key, value->get_type(scope)});
-        }
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
+    virtual void dump(std::ostream& out) const override;
+    virtual void add_to_table(const Scope& scope, std::vector<KeyValPair>& indexes, FieldMap& fielddecls, std::vector<CompileError>& errors)
+        const override;
 };
 
 class NFieldKey : public NField {
 public:
     NFieldKey() = default;
-    NFieldKey(std::unique_ptr<NExpr> k, std::unique_ptr<NExpr> v) :
-        key(std::move(k)),
-        value(std::move(v)) {}
+    NFieldKey(std::unique_ptr<NExpr> k, std::unique_ptr<NExpr> v);
     std::unique_ptr<NExpr> key;
     std::unique_ptr<NExpr> value;
-    
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        key->check(parent_scope, errors);
-        value->check(parent_scope, errors);
-    }
 
-    virtual void dump(std::ostream& out) const override {
-        out << "[" << *key << "]=" << *value;
-    }
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-    virtual void add_to_table(
-        const Scope& scope,
-        std::vector<KeyValPair>& indexes,
-        FieldMap& fielddecls,
-        std::vector<CompileError>& errors) const override
-    {
-        auto keytype = key->get_type(scope);
-        auto exprtype = value->get_type(scope);
-        for (auto& index : indexes) {
-            if (is_assignable(index.key, keytype).yes) {
-                index.val = index.val | std::move(exprtype);
-                return;
-            }
-        }
-        indexes.push_back({std::move(keytype), std::move(exprtype)});
-    }
+    virtual void dump(std::ostream& out) const override;
+    virtual void add_to_table(const Scope& scope, std::vector<KeyValPair>& indexes, FieldMap& fielddecls, std::vector<CompileError>& errors)
+        const override;
 };
 
 class NTableConstructor : public NExpr {
 public:
     NTableConstructor() = default;
-    NTableConstructor(std::vector<std::unique_ptr<NField>> f) : fields(std::move(f)) {}
+    NTableConstructor(std::vector<std::unique_ptr<NField>> f);
     std::vector<std::unique_ptr<NField>> fields;
     mutable std::optional<Type> cached_type;
-    
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        for (const auto& field : fields) {
-            field->check(parent_scope, errors);
-        }
 
-        std::vector<KeyValPair> indexes;
-        FieldMap fielddecls;
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        for (const auto& field : fields) {
-            field->add_to_table(parent_scope, indexes, fielddecls, errors);
-        }
-
-        if (indexes.empty() && fields.empty()) {
-            auto& deferred = parent_scope.get_deferred_types();
-            auto deferred_id = deferred.reserve_narrow("@"+std::to_string(location.last_line));
-            deferred.set(deferred_id, Type::make_table({}, {}));
-            cached_type = Type::make_deferred(deferred, deferred_id);
-        } else {
-            cached_type = Type::make_table(std::move(indexes), std::move(fielddecls));
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "{\n";
-        for (const auto& field : fields) {
-            out << *field << ",\n";
-        }
-        out << "}";
-    }
-
-    virtual Type get_type(const Scope& scope) const override {
-        if (cached_type) {
-            return *cached_type;
-        } else {
-            return Type::make_any();
-        }
-    }
+    virtual void dump(std::ostream& out) const override;
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NBinop : public NExpr {
@@ -1963,173 +727,16 @@ public:
     };
 
     NBinop() = default;
-    NBinop(Op o, std::unique_ptr<NExpr> l, std::unique_ptr<NExpr> r) :
-        op(o),
-        left(std::move(l)),
-        right(std::move(r)) {}
+    NBinop(Op o, std::unique_ptr<NExpr> l, std::unique_ptr<NExpr> r);
     Op op;
     std::unique_ptr<NExpr> left;
     std::unique_ptr<NExpr> right;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        left->check(parent_scope, errors);
-        right->check(parent_scope, errors);
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        auto lhs = left->get_type(parent_scope);
-        auto rhs = right->get_type(parent_scope);
+    virtual void dump(std::ostream& out) const override;
 
-        auto require_compare = [&]{
-            for (const auto& type : {LuaType::NUMBER, LuaType::STRING}) {
-                auto l = is_assignable(type, lhs);
-                auto r = is_assignable(type, rhs);
-
-                if (l.yes && r.yes) {
-                    return;
-                }
-            }
-
-            errors.emplace_back("Cannot compare `" + to_string(lhs) + "` to `" + to_string(rhs) + "`", location);
-        };
-
-        auto require_equal = [&]{
-            auto l = is_assignable(lhs, rhs);
-            auto r = is_assignable(rhs, lhs);
-
-            if (l.yes || r.yes) {
-                return;
-            }
-
-            errors.emplace_back("Cannot compare `" + to_string(lhs) + "` to `" + to_string(rhs) + "`", location);
-        };
-
-        auto require_bitwise = [&]{
-            auto l = is_assignable(LuaType::NUMBER, lhs);
-            auto r = is_assignable(LuaType::NUMBER, rhs);
-
-            if (!l.yes) {
-                l.messages.push_back("In bitwise operation");
-                errors.emplace_back(to_string(l), location);
-            }
-
-            if (!r.yes) {
-                r.messages.push_back("In bitwise operation");
-                errors.emplace_back(to_string(r), location);
-            }
-        };
-
-        auto require_concat = [&]{
-            auto l = is_assignable(LuaType::STRING, lhs);
-            auto r = is_assignable(LuaType::STRING, rhs);
-
-            if (!l.yes) {
-                l.messages.push_back("In concat operation");
-                errors.emplace_back(to_string(l), location);
-            }
-
-            if (!r.yes) {
-                r.messages.push_back("In concat operation");
-                errors.emplace_back(to_string(r), location);
-            }
-        };
-
-        auto require_math = [&]{
-            auto l = is_assignable(LuaType::NUMBER, lhs);
-            auto r = is_assignable(LuaType::NUMBER, rhs);
-
-            if (!l.yes) {
-                l.messages.push_back("In arithmetic operation");
-                errors.emplace_back(to_string(l), location);
-            }
-
-            if (!r.yes) {
-                r.messages.push_back("In arithmetic operation");
-                errors.emplace_back(to_string(r), location);
-            }
-        };
-
-        switch (op) {
-            case Op::OR: break;
-            case Op::AND: break;
-            case Op::LT: require_compare(); break;
-            case Op::GT: require_compare(); break;
-            case Op::LEQ: require_compare(); break;
-            case Op::GEQ: require_compare(); break;
-            case Op::NEQ: require_equal(); break;
-            case Op::EQ: require_equal(); break;
-            case Op::BOR: require_bitwise(); break;
-            case Op::BXOR: require_bitwise(); break;
-            case Op::BAND: require_bitwise(); break;
-            case Op::SHL: require_bitwise(); break;
-            case Op::SHR: require_bitwise(); break;
-            case Op::CONCAT: require_concat(); break;
-            case Op::ADD: require_math(); break;
-            case Op::SUB: require_math(); break;
-            case Op::MUL: require_math(); break;
-            case Op::DIV: require_math(); break;
-            case Op::IDIV: require_math(); break;
-            case Op::MOD: require_math(); break;
-            case Op::POW: require_math(); break;
-            default: throw std::logic_error("Invalid binary operator");
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "(" << *left << " ";
-        switch (op) {
-            case Op::OR: out << "or"; break;
-            case Op::AND: out << "and"; break;
-            case Op::LT: out << "<"; break;
-            case Op::GT: out << ">"; break;
-            case Op::LEQ: out << "<="; break;
-            case Op::GEQ: out << ">="; break;
-            case Op::NEQ: out << "~="; break;
-            case Op::EQ: out << "=="; break;
-            case Op::BOR: out << "|"; break;
-            case Op::BXOR: out << "~"; break;
-            case Op::BAND: out << "&"; break;
-            case Op::SHL: out << "<<"; break;
-            case Op::SHR: out << ">>"; break;
-            case Op::CONCAT: out << ".."; break;
-            case Op::ADD: out << "+"; break;
-            case Op::SUB: out << "-"; break;
-            case Op::MUL: out << "*"; break;
-            case Op::DIV: out << "/"; break;
-            case Op::IDIV: out << "//"; break;
-            case Op::MOD: out << "%"; break;
-            case Op::POW: out << "^"; break;
-            default: throw std::logic_error("Invalid binary operator");
-        }
-        out << " " << *right << ")";
-    }
-
-    virtual Type get_type(const Scope& scope) const override {
-        switch (op) {
-            case Op::OR:
-                return (left->get_type(scope) - Type::make_literal(false))
-                    | right->get_type(scope);
-            case Op::AND: return Type::make_literal(false) | right->get_type(scope);
-            case Op::LT: return Type::make_luatype(LuaType::BOOLEAN);
-            case Op::GT: return Type::make_luatype(LuaType::BOOLEAN);
-            case Op::LEQ: return Type::make_luatype(LuaType::BOOLEAN);
-            case Op::GEQ: return Type::make_luatype(LuaType::BOOLEAN);
-            case Op::NEQ: return Type::make_luatype(LuaType::BOOLEAN);
-            case Op::EQ: return Type::make_luatype(LuaType::BOOLEAN);
-            case Op::BOR: return Type::make_luatype(LuaType::NUMBER);
-            case Op::BXOR: return Type::make_luatype(LuaType::NUMBER);
-            case Op::BAND: return Type::make_luatype(LuaType::NUMBER);
-            case Op::SHL: return Type::make_luatype(LuaType::NUMBER);
-            case Op::SHR: return Type::make_luatype(LuaType::NUMBER);
-            case Op::CONCAT: return Type::make_luatype(LuaType::STRING);
-            case Op::ADD: return Type::make_luatype(LuaType::NUMBER);
-            case Op::SUB: return Type::make_luatype(LuaType::NUMBER);
-            case Op::MUL: return Type::make_luatype(LuaType::NUMBER);
-            case Op::DIV: return Type::make_luatype(LuaType::NUMBER);
-            case Op::IDIV: return Type::make_luatype(LuaType::NUMBER);
-            case Op::MOD: return Type::make_luatype(LuaType::NUMBER);
-            case Op::POW: return Type::make_luatype(LuaType::NUMBER);
-            default: throw std::logic_error("Invalid binary operator");
-        }
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 class NUnaryop : public NExpr {
@@ -2142,68 +749,15 @@ public:
     };
 
     NUnaryop() = default;
-    NUnaryop(Op o, std::unique_ptr<NExpr> e) :
-        op(o),
-        expr(std::move(e)) {}
+    NUnaryop(Op o, std::unique_ptr<NExpr> e);
     Op op;
     std::unique_ptr<NExpr> expr;
 
-    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-        expr->check(parent_scope, errors);
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
-        auto type = expr->get_type(parent_scope);
+    virtual void dump(std::ostream& out) const override;
 
-        auto require_len = [&]{
-            auto str = Type::make_luatype(LuaType::STRING);
-            auto tab = Type::make_table({{Type::make_luatype(LuaType::NUMBER), Type::make_any()}}, {});
-            auto r = is_assignable(str | tab, type);
-
-            if (!r.yes) {
-                r.messages.push_back("In length operator");
-                errors.emplace_back(to_string(r), location);
-            }
-        };
-
-        auto require_number = [&]{
-            auto num = Type::make_luatype(LuaType::NUMBER);
-            auto r = is_assignable(num, type);
-
-            if (!r.yes) {
-                r.messages.push_back("In unary operator");
-                errors.emplace_back(to_string(r), location);
-            }
-        };
-
-        switch (op) {
-            case Op::NOT: break;
-            case Op::LEN: require_len(); break;
-            case Op::NEG: require_number(); break;
-            case Op::BNOT: require_number(); break;
-            default: throw std::logic_error("Invalid unary operator");
-        }
-    }
-
-    virtual void dump(std::ostream& out) const override {
-        out << "(";
-        switch (op) {
-            case Op::NOT: out << "not"; break;
-            case Op::LEN: out << "#"; break;
-            case Op::NEG: out << "-"; break;
-            case Op::BNOT: out << "~"; break;
-            default: throw std::logic_error("Invalid unary operator");
-        }
-        out << " " << *expr << ")";
-    }
-
-    virtual Type get_type(const Scope& scope) const override {
-        switch (op) {
-            case Op::NOT: return Type::make_luatype(LuaType::BOOLEAN);
-            case Op::LEN: return Type::make_luatype(LuaType::NUMBER);
-            case Op::NEG: return Type::make_luatype(LuaType::NUMBER);
-            case Op::BNOT: return Type::make_luatype(LuaType::NUMBER);
-            default: throw std::logic_error("Invalid unary operator");
-        }
-    }
+    virtual Type get_type(const Scope& scope) const override;
 };
 
 } // namespace typedlua::ast
