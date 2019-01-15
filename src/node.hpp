@@ -1295,14 +1295,14 @@ public:
             for (auto i = 0u; i < generic_params.size(); ++i) {
                 const auto& gparam = generic_params[i];
                 gparam.check(scope, errors);
-                scope.add_name(gparam.name, Type::make_genparam(i));
+                scope.add_type(gparam.name, Type::make_genparam(i));
             }
 
             params->check(scope, errors);
 
             // Use interface types in function body
             for (const auto& gparam : generic_params) {
-                scope.add_name(gparam.name, gparam.get_type(scope));
+                scope.add_type(gparam.name, gparam.get_type(scope));
             }
 
             params->add_to_scope(scope);
@@ -1313,7 +1313,7 @@ public:
                 scope.disable_dots();
             }
 
-            if (ret) ret->check(parent_scope, errors);
+            if (ret) ret->check(scope, errors);
 
             return scope;
         };

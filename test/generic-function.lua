@@ -20,3 +20,11 @@ local x, y, z = ipairs(t)
 x = nil
 y = nil
 z = nil
+
+function ipairs<V, T: {[number]: V}>(t: T): [:(:T, :number):[:number, :V], :T, :number]
+    local function iter(t: T, i: number)
+        return i, t[i]
+    end
+
+    return iter, t, 0
+end
