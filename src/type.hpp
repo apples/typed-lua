@@ -34,6 +34,7 @@ struct NameType;
 
 struct FunctionType {
     std::vector<NameType> genparams;
+    std::vector<int> nominals;
     std::vector<Type> params;
     std::unique_ptr<Type> ret;
     bool variadic = false;
@@ -43,14 +44,16 @@ struct FunctionType {
         params(std::move(params)),
         ret(std::move(ret)),
         variadic(v) {}
-    FunctionType(std::vector<NameType> genparams, std::vector<Type> params, std::unique_ptr<Type> ret, bool v) :
+    FunctionType(std::vector<NameType> genparams, std::vector<int> nominals, std::vector<Type> params, std::unique_ptr<Type> ret, bool v) :
         genparams(std::move(genparams)),
+        nominals(std::move(nominals)),
         params(std::move(params)),
         ret(std::move(ret)),
         variadic(v) {}
     FunctionType(FunctionType&&) = default;
     FunctionType(const FunctionType& other) :
         genparams(other.genparams),
+        nominals(other.nominals),
         params(other.params),
         ret(std::make_unique<Type>(*other.ret)),
         variadic(other.variadic) {}
@@ -58,6 +61,7 @@ struct FunctionType {
     FunctionType& operator=(FunctionType&&) = default;
     FunctionType& operator=(const FunctionType& other) {
         genparams = other.genparams;
+        nominals = other.nominals;
         params = other.params;
         ret = std::make_unique<Type>(*other.ret);
         return *this;
@@ -218,8 +222,8 @@ struct LiteralType {
     }
 };
 
-struct GenericParamType {
-    int index;
+struct NominalType {
+    DeferredType defer;
 };
 
 class Type {
@@ -234,7 +238,7 @@ public:
         TABLE,
         DEFERRED,
         LITERAL,
-        GENPARAM,
+        NOMINAL,
     };
 
     Type() = default;
@@ -262,10 +266,11 @@ public:
         return type;
     }
 
-    static Type make_function(std::vector<NameType> genparams, std::vector<Type> params, Type ret, bool variadic) {
+    static Type make_function(std::vector<NameType> genparams, std::vector<int> nominals, std::vector<Type> params, Type ret, bool variadic) {
         auto type = Type{};
         type.types = FunctionType{
             std::move(genparams),
+            std::move(nominals),
             std::move(params),
             std::make_unique<Type>(std::move(ret)),
             variadic};
@@ -304,9 +309,9 @@ public:
         return type;
     }
 
-    static Type make_genparam(int index) {
+    static Type make_nominal(DeferredTypeCollection& collection, int id) {
         auto type = Type{};
-        type.types = GenericParamType{index};
+        type.types = NominalType{DeferredType{&collection, id}};
         return type;
     }
 
@@ -326,7 +331,7 @@ public:
 
     const LiteralType& get_literal() const { return std::get<LiteralType>(types); }
 
-    const GenericParamType& get_genparam() const { return std::get<GenericParamType>(types); }
+    const NominalType& get_nominal() const { return std::get<NominalType>(types); }
 
     friend Type operator|(const Type& lhs, const Type& rhs);
 
@@ -343,7 +348,7 @@ private:
         TableType,
         DeferredType,
         LiteralType,
-        GenericParamType>;
+        NominalType>;
 
     Types types;
 };
@@ -357,7 +362,7 @@ std::string to_string(const TableType& table);
 std::string to_string(const DeferredType& defer);
 std::string to_string(const LuaType& luatype);
 std::string to_string(const LiteralType& literal);
-std::string to_string(const GenericParamType& genparam);
+std::string to_string(const NominalType& nominal);
 
 class DeferredTypeCollection {
 public:
@@ -415,6 +420,11 @@ struct AssignResult {
     AssignResult(bool b) : yes(b) {}
     AssignResult(bool b, std::string m) : yes(b), messages{std::move(m)} {}
 };
+
+Type apply_genparams(
+    const std::vector<std::optional<Type>>& genparams,
+    const std::vector<int>& nominals,
+    const Type& type);
 
 template <typename RHS>
 AssignResult is_assignable(const SumType& lsum, const RHS& rhs);
@@ -708,6 +718,7 @@ inline std::optional<Type> get_index_type(const Type& type, const Type& key, std
         case Type::Tag::SUM: return get_index_type(type.get_sum(), key, notes);
         case Type::Tag::TABLE: return get_index_type(type.get_table(), key, notes);
         case Type::Tag::DEFERRED: return get_index_type(type.get_deferred(), key, notes);
+        case Type::Tag::NOMINAL: return get_index_type(type.get_nominal().defer, key, notes);
         default:
             notes.push_back("Type `" + to_string(type) + "` has no indexes");
             return std::nullopt;
@@ -807,13 +818,30 @@ inline AssignResult is_assignable(const FunctionType& lfunc, const FunctionType&
         return {false, "Not enough parameters."};
     }
 
+    auto lgenparams = std::vector<std::optional<Type>>{};
+    auto rgenparams = std::vector<std::optional<Type>>{};
+
+    lgenparams.reserve(lfunc.genparams.size());
+    rgenparams.reserve(lfunc.genparams.size());
+    
+    for (const auto& gparam : lfunc.genparams) {
+        lgenparams.push_back(gparam.type);
+    }
+    
+    for (const auto& gparam : rfunc.genparams) {
+        rgenparams.push_back(gparam.type);
+    }
+
     for (auto i = 0u; i < rfunc.params.size(); ++i) {
         auto r = AssignResult{};
 
         if (i < lfunc.params.size()) {
-            r = is_assignable(rfunc.params[i], lfunc.params[i]);
+            auto lparam = apply_genparams(lgenparams, lfunc.nominals, lfunc.params[i]);
+            auto rparam = apply_genparams(rgenparams, rfunc.nominals, rfunc.params[i]);
+            r = is_assignable(rparam, lparam);
         } else {
-            r = is_assignable(rfunc.params[i], LuaType::NIL);
+            auto rparam = apply_genparams(rgenparams, rfunc.nominals, rfunc.params[i]);
+            r = is_assignable(rparam, LuaType::NIL);
         }
 
         if (!r.yes) {
@@ -822,7 +850,10 @@ inline AssignResult is_assignable(const FunctionType& lfunc, const FunctionType&
         }
     }
 
-    auto r = is_assignable(*lfunc.ret, *rfunc.ret);
+    auto lret = apply_genparams(lgenparams, lfunc.nominals, *lfunc.ret);
+    auto rret = apply_genparams(rgenparams, lfunc.nominals, *rfunc.ret);
+
+    auto r = is_assignable(lret, rret);
 
     if (!r.yes) {
         r.messages.push_back("At return type");
@@ -944,6 +975,22 @@ inline AssignResult is_assignable(const LiteralType& lliteral, const LiteralType
     return false;
 }
 
+inline AssignResult is_assignable(const NominalType& lnominal, const NominalType& rnominal) {
+    if (lnominal.defer.id != rnominal.defer.id) {
+        return {false, cannot_assign(lnominal, rnominal)};
+    }
+
+    return true;
+}
+
+inline AssignResult is_assignable(const Type& lhs, VoidType) {
+    if (lhs.get_tag() == Type::Tag::VOID) {
+        return true;
+    } else {
+        return {false, cannot_assign(lhs, Type{})};
+    }
+}
+
 inline AssignResult is_assignable(const Type& lhs, const FunctionType& rfunc) {
     switch (lhs.get_tag()) {
         case Type::Tag::ANY: return true;
@@ -1003,11 +1050,21 @@ inline AssignResult is_assignable(const Type& lhs, const LiteralType& rliteral) 
     }
 }
 
+inline AssignResult is_assignable(const Type& lhs, const NominalType& rnominal) {
+    switch (lhs.get_tag()) {
+        case Type::Tag::ANY: return true;
+        case Type::Tag::NOMINAL: return is_assignable(lhs.get_nominal(), rnominal);
+        case Type::Tag::SUM: return is_assignable(lhs.get_sum(), rnominal);
+        case Type::Tag::DEFERRED: return is_assignable(lhs.get_deferred(), rnominal);
+        default: return is_assignable(lhs, rnominal.defer);
+    }
+}
+
 inline AssignResult is_assignable(const Type& lhs, const Type& rhs) {
     auto r = [&]() -> AssignResult {
         switch (rhs.get_tag()) {
-            case Type::Tag::VOID: return {false, "Cannot assign `void` to `" + to_string(lhs) + "`"};
             case Type::Tag::ANY: return true;
+            case Type::Tag::VOID: return is_assignable(lhs, VoidType{});
             case Type::Tag::LUATYPE: return is_assignable(lhs, rhs.get_luatype());
             case Type::Tag::FUNCTION: return is_assignable(lhs, rhs.get_function());
             case Type::Tag::TUPLE: return is_assignable(lhs, rhs.get_tuple());
@@ -1015,7 +1072,8 @@ inline AssignResult is_assignable(const Type& lhs, const Type& rhs) {
             case Type::Tag::TABLE: return is_assignable(lhs, rhs.get_table());
             case Type::Tag::DEFERRED: return is_assignable(lhs, rhs.get_deferred());
             case Type::Tag::LITERAL: return is_assignable(lhs, rhs.get_literal());
-            default: throw std::logic_error("Tag not implemented for assignment");
+            case Type::Tag::NOMINAL: return is_assignable(lhs, rhs.get_nominal());
+            default: return {false, "Tag not implemented for assignment"};
         }
     }();
 
@@ -1030,24 +1088,39 @@ inline AssignResult check_param(
     const Type& param,
     const Type& arg,
     const std::vector<NameType>& genparams,
+    const std::vector<int>& nominals,
     std::vector<std::optional<Type>>& genparams_inferred)
 {
-    switch (param.get_tag()) {
-        case Type::Tag::GENPARAM: {
-            auto idx = param.get_genparam().index;
-            const auto& genparam = genparams[idx];
-            auto& inferred = genparams_inferred[idx];
+    switch (arg.get_tag()) {
+        case Type::Tag::DEFERRED: {
+            const auto& defer = arg.get_deferred();
+            return check_param(param, defer.collection->get(defer.id), genparams, nominals, genparams_inferred);
+        }
+    }
 
-            if (inferred) {
-                return is_assignable(*inferred, arg);
-            } else {
-                auto r = check_param(genparam.type, arg, genparams, genparams_inferred);
-                if (r.yes) {
-                    inferred = arg;
+    switch (param.get_tag()) {
+        case Type::Tag::NOMINAL: {
+            auto id = param.get_nominal().defer.id;
+
+            for (auto i = 0u; i < nominals.size(); ++i) {
+                if (nominals[i] == id) {
+                    auto& genparam = genparams[i];
+                    auto& inferred = genparams_inferred[i];
+
+                    if (inferred) {
+                        return is_assignable(*inferred, arg);
+                    } else {
+                        auto r = check_param(genparam.type, arg, genparams, nominals, genparams_inferred);
+                        if (r.yes) {
+                            inferred = arg;
+                        }
+                        return r;
+                    }
                 }
-                return r;
             }
-        } break;
+
+            return is_assignable(param, arg);
+        }
         case Type::Tag::TABLE: {
             if (arg.get_tag() != Type::Tag::TABLE) {
                 return {false, cannot_assign(param, arg)};
@@ -1059,7 +1132,7 @@ inline AssignResult check_param(
             for (const auto& index : table.indexes) {
                 for (const auto& argindex : argtable.indexes) {
                     if (is_assignable(argindex.key, index.key).yes) {
-                        auto r = check_param(index.val, argindex.val, genparams, genparams_inferred);
+                        auto r = check_param(index.val, argindex.val, genparams, nominals, genparams_inferred);
 
                         if (!r.yes) {
                             r.messages.push_back("When checking param table index `" + to_string(index.key) + "`");
@@ -1072,7 +1145,7 @@ inline AssignResult check_param(
             for (const auto& field : table.fields) {
                 for (const auto& argfield : argtable.fields) {
                     if (field.name == argfield.name) {
-                        auto r = check_param(field.type, argfield.type, genparams, genparams_inferred);
+                        auto r = check_param(field.type, argfield.type, genparams, nominals, genparams_inferred);
 
                         if (!r.yes) {
                             r.messages.push_back("When checking param table field `" + to_string(field.name) + "`");
@@ -1088,7 +1161,7 @@ inline AssignResult check_param(
             const auto& sum = param.get_sum();
 
             for (const auto& type : sum.types) {
-                auto r = check_param(type, arg, genparams, genparams_inferred);
+                auto r = check_param(type, arg, genparams, nominals, genparams_inferred);
 
                 if (r.yes) {
                     return r;
@@ -1101,14 +1174,18 @@ inline AssignResult check_param(
             const auto& defer = param.get_deferred();
             const auto& type = defer.collection->get(defer.id);
 
-            return check_param(type, arg, genparams, genparams_inferred);
+            auto r = check_param(type, arg, genparams, nominals, genparams_inferred);
+
+            if (!r.yes) {
+                r.messages.push_back(cannot_assign(param, arg));
+            }
+
+            return r;
         } break;
         default: {
             return is_assignable(param, arg);
         } break;
     }
 }
-
-Type apply_genparams(const std::vector<std::optional<Type>>& genparams, const Type& type);
 
 } // namespace typedlua

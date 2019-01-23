@@ -28,3 +28,22 @@ function ipairs<V, T: {[number]: V}>(t: T): [:(:T, :number):[:number, :V], :T, :
 
     return iter, t, 0
 end
+
+local obj = {}
+
+global print: (:any):void
+
+function obj:horse<T>(x: T): T
+    print(t)
+    return t
+end
+
+local h = obj.horse
+
+h = nil
+
+obj.horse(obj, 42)
+
+local x = obj:horse(42)
+
+x = nil

@@ -87,15 +87,19 @@ NTypeFunction::NTypeFunction(std::vector<NTypeFunctionParam> p, std::unique_ptr<
 
 void NTypeFunction::check(Scope& parent_scope, std::vector<CompileError>& errors) const {
     auto scope = Scope(&parent_scope);
+    auto& deferred = scope.get_deferred_types();
 
     std::vector<NameType> genparams;
+    std::vector<int> nominals;
     std::vector<Type> paramtypes;
 
     for (auto i = 0u; i < generic_params.size(); ++i) {
         const auto& gparam = generic_params[i];
         gparam.check(scope, errors);
-        scope.add_type(gparam.name, Type::make_genparam(i));
+        auto id = deferred.reserve(gparam.name);
+        scope.add_type(gparam.name, Type::make_nominal(deferred, id));
         genparams.push_back({gparam.name, gparam.get_type(scope)});
+        nominals.push_back(id);
     }
 
     for (const auto& param : params) {
@@ -105,7 +109,7 @@ void NTypeFunction::check(Scope& parent_scope, std::vector<CompileError>& errors
 
     ret->check(scope, errors);
 
-    cached_type = Type::make_function(std::move(genparams), std::move(paramtypes), ret->get_type(scope), is_variadic);
+    cached_type = Type::make_function(std::move(genparams), nominals, std::move(paramtypes), ret->get_type(scope), is_variadic);
 }
 
 Type NTypeFunction::get_type(const Scope& parent_scope) const {
@@ -536,16 +540,17 @@ void NFunctionCall::check(Scope& parent_scope, std::vector<CompileError>& errors
                     const auto& rhstype = rhs[i];
                     const auto& lhstype = func.params[i];
 
-                    auto r = check_param(lhstype, rhstype, func.genparams, genparams_inferred);
+                    auto r = check_param(lhstype, rhstype, func.genparams, func.nominals, genparams_inferred);
 
                     if (!r.yes) {
+                        r.messages.push_back("Invalid parameter " + std::to_string(i));
                         errors.emplace_back(to_string(r), location);
                     } else if (!r.messages.empty()) {
                         errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
                     }
                 }
 
-                cached_rettype = apply_genparams(genparams_inferred, *func.ret);
+                cached_rettype = apply_genparams(genparams_inferred, func.nominals, *func.ret);
             }
         } break;
         default: errors.emplace_back("Cannot call non-function type `" + to_string(prefixtype) + "`", location); break;
@@ -575,12 +580,10 @@ void NFunctionSelfCall::check(Scope& parent_scope, std::vector<CompileError>& er
 
     auto functype = get_field_type(prefixtype, name, notes);
 
-    std::optional<Type> rettype;
-
     if (!functype) {
         notes.push_back("Could not find method '" + name + "' in type `" + to_string(prefixtype) + "`");
     } else {
-        rettype = get_return_type(*functype, notes);
+        cached_rettype = get_return_type(*functype, notes);
 
         switch ((*functype).get_tag()) {
             case Type::Tag::ANY: break;
@@ -589,28 +592,47 @@ void NFunctionSelfCall::check(Scope& parent_scope, std::vector<CompileError>& er
 
                 auto rhs = std::vector<Type>{};
 
+                // Convert args into a semi-tuple
                 if (args) {
                     rhs.reserve(args->args.size() + 1);
-                } else {
-                    rhs.reserve(1);
-                }
 
-                rhs.push_back(prefixtype);
+                    rhs.push_back(prefixtype);
 
-                if (args) {
                     for (const auto& expr : args->args) {
                         rhs.push_back(expr->get_type(parent_scope));
                     }
+                } else {
+                    rhs.push_back(prefixtype);
                 }
 
-                const auto lhstype = Type::make_tuple(func.params, func.variadic);
-                const auto rhstype = Type::make_tuple(std::move(rhs), false);
-                const auto r = is_assignable(lhstype, rhstype);
+                if (rhs.size() > func.params.size() && !func.variadic) {
+                    errors.emplace_back("Too many arguments for non-variadic function", location);
+                } else {
+                    if (rhs.size() < func.params.size()) {
+                        std::fill_n(std::back_inserter(rhs), func.params.size() - rhs.size(), Type::make_luatype(LuaType::NIL));
+                    }
 
-                if (!r.yes) {
-                    errors.emplace_back(to_string(r), location);
-                } else if (!r.messages.empty()) {
-                    errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
+                    std::vector<std::optional<Type>> genparams_inferred;
+
+                    genparams_inferred.resize(func.genparams.size());
+
+                    const auto sz = std::min(rhs.size(), func.params.size());
+
+                    for (auto i = 0u; i < sz; ++i) {
+                        const auto& rhstype = rhs[i];
+                        const auto& lhstype = func.params[i];
+
+                        auto r = check_param(lhstype, rhstype, func.genparams, func.nominals, genparams_inferred);
+
+                        if (!r.yes) {
+                            r.messages.push_back("Invalid parameter " + std::to_string(i));
+                            errors.emplace_back(to_string(r), location);
+                        } else if (!r.messages.empty()) {
+                            errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
+                        }
+                    }
+
+                    cached_rettype = apply_genparams(genparams_inferred, func.nominals, *func.ret);
                 }
             } break;
             default: errors.emplace_back("Cannot call non-function type `" + to_string(*functype) + "`", location); break;
@@ -624,8 +646,6 @@ void NFunctionSelfCall::check(Scope& parent_scope, std::vector<CompileError>& er
         }
         errors.emplace_back(msg, location);
     }
-
-    cached_type = std::move(rettype);
 }
 
 void NFunctionSelfCall::dump(std::ostream& out) const {
@@ -635,8 +655,8 @@ void NFunctionSelfCall::dump(std::ostream& out) const {
 }
 
 Type NFunctionSelfCall::get_type(const Scope& scope) const {
-    if (cached_type) {
-        return *cached_type;
+    if (cached_rettype) {
+        return *cached_rettype;
     } else {
         return Type::make_any();
     }
@@ -936,24 +956,28 @@ FunctionBase::FunctionBase(std::vector<NNameDecl> g, std::unique_ptr<NFuncParams
 Type FunctionBase::check(Scope& parent_scope, std::vector<CompileError>& errors) const {
     auto return_type = Type{};
 
+    nominals.clear();
+    nominals.reserve(generic_params.size());
+
     auto setup_scope = [&] {
         auto scope = Scope(&parent_scope);
+        auto& deferred = scope.get_deferred_types();
 
-        // Create light types for parameter checking
         for (auto i = 0u; i < generic_params.size(); ++i) {
             const auto& gparam = generic_params[i];
-            gparam.check(scope, errors);
-            scope.add_type(gparam.name, Type::make_genparam(i));
+            auto defer_id = deferred.reserve(gparam.name);
+            deferred.set(defer_id, gparam.get_type(scope));
+            scope.add_type(gparam.name, Type::make_nominal(deferred, defer_id));
+            nominals.push_back(defer_id);
         }
 
         params->check(scope, errors);
-
-        // Use interface types in function body
-        for (const auto& gparam : generic_params) {
-            scope.add_type(gparam.name, gparam.get_type(scope));
-        }
-
         params->add_to_scope(scope);
+
+        if (ret) {
+            ret->check(scope, errors);
+            return_type = ret->get_type(scope);
+        }
 
         if (params->is_variadic) {
             scope.set_dots_type(Type::make_tuple({}, true));
@@ -961,15 +985,12 @@ Type FunctionBase::check(Scope& parent_scope, std::vector<CompileError>& errors)
             scope.disable_dots();
         }
 
-        if (ret) ret->check(scope, errors);
-
         return scope;
     };
 
     if (ret) {
         auto this_scope = setup_scope();
 
-        return_type = ret->get_type(this_scope);
         this_scope.set_return_type(return_type);
 
         block->check(this_scope, errors);
@@ -990,17 +1011,36 @@ Type FunctionBase::check(Scope& parent_scope, std::vector<CompileError>& errors)
 
 Type FunctionBase::get_type(Scope& parent_scope, const Type& rettype) const {
     auto scope = Scope(&parent_scope);
+    auto& deferred = scope.get_deferred_types();
 
     std::vector<NameType> genparams;
 
     for (auto i = 0u; i < generic_params.size(); ++i) {
         const auto& gparam = generic_params[i];
-        auto type = Type::make_genparam(i);
-        scope.add_name(gparam.name, type);
+        scope.add_type(gparam.name, Type::make_nominal(deferred, nominals[i]));
         genparams.push_back({gparam.name, gparam.get_type(scope)});
     }
 
-    return Type::make_function(std::move(genparams), params->get_types(scope), rettype, params->is_variadic);
+    return Type::make_function(std::move(genparams), nominals, params->get_types(scope), rettype, params->is_variadic);
+}
+
+Type FunctionBase::get_type(Scope& parent_scope, const Type& rettype, const Type& selftype) const {
+    auto scope = Scope(&parent_scope);
+    auto& deferred = scope.get_deferred_types();
+
+    std::vector<NameType> genparams;
+
+    for (auto i = 0u; i < generic_params.size(); ++i) {
+        const auto& gparam = generic_params[i];
+        scope.add_type(gparam.name, Type::make_nominal(deferred, nominals[i]));
+        genparams.push_back({gparam.name, gparam.get_type(scope)});
+    }
+
+    auto paramtypes = params->get_types(scope);
+
+    paramtypes.insert(paramtypes.begin(), selftype);
+
+    return Type::make_function(std::move(genparams), nominals, std::move(paramtypes), rettype, params->is_variadic);
 }
 
 NFunction::NFunction(FunctionBase fb, std::unique_ptr<NExpr> e)
@@ -1021,59 +1061,21 @@ void NFunction::dump(std::ostream& out) const {
     out << "end";
 }
 
-NSelfFunction::NSelfFunction(
-    std::string m,
-    std::unique_ptr<NExpr> e,
-    std::unique_ptr<NFuncParams> p,
-    std::unique_ptr<NType> r,
-    std::unique_ptr<NBlock> b)
-    : name(std::move(m)), expr(std::move(e)), params(std::move(p)), ret(std::move(r)), block(std::move(b)) {}
+NSelfFunction::NSelfFunction(FunctionBase fb, std::string m, std::unique_ptr<NExpr> e)
+    : base(std::move(fb)), name(std::move(m)), expr(std::move(e)) {}
 
 void NSelfFunction::check(Scope& parent_scope, std::vector<CompileError>& errors) const {
     expr->check(parent_scope, errors);
-    params->check(parent_scope, errors);
-    if (ret) ret->check(parent_scope, errors);
 
     const auto self_type = expr->get_type(parent_scope);
-    auto return_type = Type::make_any();
-    auto param_types = params->get_types(parent_scope);
-    param_types.insert(param_types.begin(), self_type);
 
-    if (ret) {
-        return_type = ret->get_type(parent_scope);
+    auto scope = Scope(&parent_scope);
 
-        auto this_scope = Scope(&parent_scope);
-        params->add_to_scope(this_scope);
-        this_scope.add_name("self", self_type);
-        this_scope.set_return_type(return_type);
+    scope.add_name("self", self_type);
 
-        if (params->is_variadic) {
-            this_scope.set_dots_type(Type::make_tuple({}, true));
-        } else {
-            this_scope.disable_dots();
-        }
+    auto return_type = base.check(scope, errors);
 
-        block->check(this_scope, errors);
-    } else {
-        auto this_scope = Scope(&parent_scope);
-        params->add_to_scope(this_scope);
-        this_scope.add_name("self", self_type);
-        this_scope.deduce_return_type();
-
-        if (params->is_variadic) {
-            this_scope.set_dots_type(Type::make_tuple({}, true));
-        } else {
-            this_scope.disable_dots();
-        }
-
-        block->check(this_scope, errors);
-
-        if (auto newret = this_scope.get_return_type()) {
-            return_type = std::move(*newret);
-        }
-    }
-
-    const auto functype = Type::make_function(param_types, std::move(return_type), params->is_variadic);
+    const auto functype = base.get_type(scope, return_type, self_type);
 
     if (self_type.get_tag() == Type::Tag::DEFERRED) {
         const auto& defer = self_type.get_deferred();
@@ -1116,9 +1118,9 @@ void NSelfFunction::check(Scope& parent_scope, std::vector<CompileError>& errors
 }
 
 void NSelfFunction::dump(std::ostream& out) const {
-    out << "function " << *expr << ":" << name << "(" << *params << ")";
+    out << "function " << *expr << ":" << name << "(" << *base.params << ")";
     out << "\n";
-    out << *block;
+    out << *base.block;
     out << "end";
 }
 

@@ -322,7 +322,7 @@ public:
     std::unique_ptr<NExpr> prefix;
     std::string name;
     std::unique_ptr<NArgSeq> args;
-    mutable std::optional<Type> cached_type;
+    mutable std::optional<Type> cached_rettype;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
@@ -500,10 +500,13 @@ public:
 
     Type get_type(Scope& parent_scope, const Type& rettype) const;
 
+    Type get_type(Scope& parent_scope, const Type& rettype, const Type& selftype) const;
+
     std::vector<NNameDecl> generic_params;
     std::unique_ptr<NFuncParams> params;
     std::unique_ptr<NType> ret;
     std::unique_ptr<NBlock> block;
+    mutable std::vector<int> nominals;
 };
 
 class NFunction : public Node {
@@ -520,17 +523,11 @@ public:
 class NSelfFunction : public Node {
 public:
     NSelfFunction() = default;
-    NSelfFunction(
-        std::string m,
-        std::unique_ptr<NExpr> e,
-        std::unique_ptr<NFuncParams> p,
-        std::unique_ptr<NType> r,
-        std::unique_ptr<NBlock> b);
+    NSelfFunction(FunctionBase fb, std::string m, std::unique_ptr<NExpr> e);
+
+    FunctionBase base;
     std::string name;
     std::unique_ptr<NExpr> expr;
-    std::unique_ptr<NFuncParams> params;
-    std::unique_ptr<NType> ret;
-    std::unique_ptr<NBlock> block;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 

@@ -545,12 +545,29 @@ function: TFUNCTION funcvar funcparams funcret block TEND {
         }
         | TFUNCTION funcvar ':' TIDENTIFIER[name] funcparams funcret block TEND {
             $$ = new NSelfFunction(
+                {
+                    {},
+                    std::unique_ptr<NFuncParams>($funcparams),
+                    std::unique_ptr<NType>($funcret),
+                    std::unique_ptr<NBlock>($block)
+                },
                 std::move(*$name),
-                std::unique_ptr<NExpr>($funcvar),
-                std::unique_ptr<NFuncParams>($funcparams),
-                std::unique_ptr<NType>($funcret),
-                std::unique_ptr<NBlock>($block));
+                std::unique_ptr<NExpr>($funcvar));
             $$->location = @$;
+            delete $name;
+        }
+        | TFUNCTION funcvar ':' TIDENTIFIER[name] funcgenparams funcparams funcret block TEND {
+            $$ = new NSelfFunction(
+                {
+                    std::move(*$funcgenparams),
+                    std::unique_ptr<NFuncParams>($funcparams),
+                    std::unique_ptr<NType>($funcret),
+                    std::unique_ptr<NBlock>($block)
+                },
+                std::move(*$name),
+                std::unique_ptr<NExpr>($funcvar));
+            $$->location = @$;
+            delete $funcgenparams;
             delete $name;
         }
         ;

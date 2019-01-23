@@ -22,7 +22,7 @@ struct TypePrinter {
             case Type::Tag::TABLE: return to_string(type.get_table());
             case Type::Tag::DEFERRED: return to_string(type.get_deferred());
             case Type::Tag::LITERAL: return to_string(type.get_literal());
-            case Type::Tag::GENPARAM: return "@" + std::to_string(type.get_genparam().index);
+            case Type::Tag::NOMINAL: return to_string(type.get_nominal());
             default: throw std::logic_error("Tag " + std::to_string(static_cast<int>(type.get_tag())) + " not implemented for to_string");
         }
     }
@@ -158,6 +158,10 @@ struct TypePrinter {
 
         return defer.collection->get_name(defer.id);
     }
+
+    std::string to_string(const NominalType& nominal) {
+        return nominal.defer.collection->get_name(nominal.defer.id);
+    }
 };
 
 template <typename T>
@@ -272,17 +276,28 @@ std::string to_string(const LiteralType& literal) {
     return to_string_impl(literal);
 }
 
-Type apply_genparams(const std::vector<std::optional<Type>>& genparams, const Type& type) {
+std::string to_string(const NominalType& nominal) {
+    return to_string_impl(nominal);
+}
+
+Type apply_genparams(
+    const std::vector<std::optional<Type>>& genparams,
+    const std::vector<int>& nominals,
+    const Type& type)
+{
     if (genparams.empty()) {
         return type;
     }
 
     switch (type.get_tag()) {
-        case Type::Tag::GENPARAM:
-            return genparams[type.get_genparam().index].value_or(Type::make_any());
-        case Type::Tag::DEFERRED: {
-            const auto& defer = type.get_deferred();
-            return apply_genparams(genparams, defer.collection->get(defer.id));
+        case Type::Tag::NOMINAL: {
+            for (auto i = 0u; i < nominals.size(); ++i) {
+                if (nominals[i] == type.get_nominal().defer.id) {
+                    return genparams[i].value_or(Type::make_any());
+                }
+            }
+
+            return type;
         }
         case Type::Tag::TABLE: {
             const auto& table = type.get_table();
@@ -294,14 +309,14 @@ Type apply_genparams(const std::vector<std::optional<Type>>& genparams, const Ty
             fields.reserve(table.fields.size());
 
             for (const auto& index : table.indexes) {
-                auto key = apply_genparams(genparams, index.key);
-                auto val = apply_genparams(genparams, index.val);
+                auto key = apply_genparams(genparams, nominals, index.key);
+                auto val = apply_genparams(genparams, nominals, index.val);
 
                 indexes.push_back({std::move(key), std::move(val)});
             }
 
             for (const auto& field : table.fields) {
-                auto fieldtype = apply_genparams(genparams, field.type);
+                auto fieldtype = apply_genparams(genparams, nominals, field.type);
 
                 fields.push_back({field.name, fieldtype});
             }
@@ -315,9 +330,9 @@ Type apply_genparams(const std::vector<std::optional<Type>>& genparams, const Ty
 
             for (const auto& t : sum.types) {
                 if (rv) {
-                    rv = *rv | apply_genparams(genparams, t);
+                    rv = *rv | apply_genparams(genparams, nominals, t);
                 } else {
-                    rv = apply_genparams(genparams, t);
+                    rv = apply_genparams(genparams, nominals, t);
                 }
             }
 
@@ -331,7 +346,7 @@ Type apply_genparams(const std::vector<std::optional<Type>>& genparams, const Ty
             types.reserve(tuple.types.size());
 
             for (const auto& t : tuple.types) {
-                types.push_back(apply_genparams(genparams, t));
+                types.push_back(apply_genparams(genparams, nominals, t));
             }
 
             return Type::make_tuple(std::move(types), tuple.is_variadic);
@@ -344,17 +359,18 @@ Type apply_genparams(const std::vector<std::optional<Type>>& genparams, const Ty
             Type ret;
 
             for (const auto& gparam : func.genparams) {
-                gparams.push_back({gparam.name, apply_genparams(genparams, gparam.type)});
+                gparams.push_back({gparam.name, apply_genparams(genparams, nominals, gparam.type)});
             }
 
             for (const auto& param : func.params) {
-                params.push_back(apply_genparams(genparams, param));
+                params.push_back(apply_genparams(genparams, nominals, param));
             }
 
-            ret = apply_genparams(genparams, *func.ret);
+            ret = apply_genparams(genparams, nominals, *func.ret);
 
             return Type::make_function(
                 std::move(gparams),
+                func.nominals,
                 std::move(params),
                 std::move(ret),
                 func.variadic);
