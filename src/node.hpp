@@ -537,11 +537,9 @@ public:
 class NLocalFunction : public Node {
 public:
     NLocalFunction() = default;
-    NLocalFunction(std::string n, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b);
+    NLocalFunction(FunctionBase fb, std::string n);
+    FunctionBase base;
     std::string name;
-    std::unique_ptr<NFuncParams> params;
-    std::unique_ptr<NType> ret;
-    std::unique_ptr<NBlock> block;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 

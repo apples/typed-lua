@@ -511,12 +511,28 @@ localvar: TLOCAL namelist {
 
 localfunc: TLOCAL TFUNCTION TIDENTIFIER[name] funcparams funcret block TEND {
              $$ = new NLocalFunction(
-                 std::move(*$name),
-                 std::unique_ptr<NFuncParams>($funcparams),
-                 std::unique_ptr<NType>($funcret),
-                 std::unique_ptr<NBlock>($block));
+                 {
+                     {},
+                     ptr($funcparams),
+                     ptr($funcret),
+                     ptr($block)
+                 },
+                 std::move(*$name));
              $$->location = @$;
              delete $name;
+         }
+         | TLOCAL TFUNCTION TIDENTIFIER[name] funcgenparams funcparams funcret block TEND {
+             $$ = new NLocalFunction(
+                 {
+                    std::move(*$funcgenparams),
+                    ptr($funcparams),
+                    ptr($funcret),
+                    ptr($block)
+                 },
+                 std::move(*$name));
+             $$->location = @$;
+             delete $name;
+             delete $funcgenparams;
          }
          ;
 

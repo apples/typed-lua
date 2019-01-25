@@ -1124,58 +1124,31 @@ void NSelfFunction::dump(std::ostream& out) const {
     out << "end";
 }
 
-NLocalFunction::NLocalFunction(std::string n, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b)
-    : name(std::move(n)), params(std::move(p)), ret(std::move(r)), block(std::move(b)) {}
+NLocalFunction::NLocalFunction(FunctionBase fb, std::string n)
+    : base(std::move(fb)), name(std::move(n)) {}
 
 void NLocalFunction::check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-    params->check(parent_scope, errors);
-    if (ret) ret->check(parent_scope, errors);
+    auto return_type = base.check(parent_scope, errors);
 
-    auto paramtypes = params->get_types(parent_scope);
+    const auto functype = base.get_type(parent_scope, return_type);
 
-    if (ret) {
-        auto rettype = ret->get_type(parent_scope);
-        auto functype = Type::make_function(std::move(paramtypes), rettype, params->is_variadic);
-        parent_scope.add_name(name, std::move(functype));
+    if (auto existing_type = parent_scope.get_type_of(name)) {
+        auto r = is_assignable(*existing_type, functype);
 
-        auto this_scope = Scope(&parent_scope);
-        params->add_to_scope(this_scope);
-        this_scope.set_return_type(std::move(rettype));
-
-        if (params->is_variadic) {
-            this_scope.set_dots_type(Type::make_tuple({}, true));
-        } else {
-            this_scope.disable_dots();
+        if (!r.yes) {
+            errors.emplace_back(to_string(r), location);
+        } else if (!r.messages.empty()) {
+            errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
         }
-
-        block->check(this_scope, errors);
     } else {
-        auto functype = Type::make_function(paramtypes, Type::make_any(), params->is_variadic);
-        parent_scope.add_name(name, std::move(functype));
-
-        auto this_scope = Scope(&parent_scope);
-        params->add_to_scope(this_scope);
-        this_scope.deduce_return_type();
-
-        if (params->is_variadic) {
-            this_scope.set_dots_type(Type::make_tuple({}, true));
-        } else {
-            this_scope.disable_dots();
-        }
-
-        block->check(this_scope, errors);
-
-        if (auto newret = this_scope.get_return_type()) {
-            auto newtype = Type::make_function(std::move(paramtypes), std::move(*newret), params->is_variadic);
-            parent_scope.add_name(name, std::move(newtype));
-        }
+        parent_scope.add_name(name, functype);
     }
 }
 
 void NLocalFunction::dump(std::ostream& out) const {
-    out << "local function " << name << "(" << *params << ")";
+    out << "local function " << name << "(" << *base.params << ")";
     out << "\n";
-    out << *block;
+    out << *base.block;
     out << "end";
 }
 
