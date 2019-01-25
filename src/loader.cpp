@@ -49,37 +49,25 @@ int tlua_compile(lua_State* L) {
     auto new_source = std::optional<std::string>{};
     auto error_string = std::optional<std::string>{};
 
-    auto root_node = typedlua::parse(source);
+    auto [root_node, errors] = typedlua::parse(source);
 
-    if (root_node) {
+    if (root_node && errors.empty()) {
         auto scope = Scope(global_scope);
         scope.deduce_return_type();
 
-        auto errors = typedlua::check(*root_node, scope);
+        errors = typedlua::check(*root_node, scope);
+    }
 
-        if (!errors.empty()) {
-            auto oss = std::ostringstream{};
+    if (!errors.empty()) {
+        auto oss = std::ostringstream{};
 
-            oss << "=== ERRORS ===\n";
+        oss << errors;
 
-            for (const auto& error : errors) {
-                switch (error.severity) {
-                    case typedlua::CompileError::Severity::ERROR:
-                        oss << "ERROR: ";
-                        break;
-                    case typedlua::CompileError::Severity::WARNING:
-                        oss << "Warning: ";
-                        break;
-                }
-
-                oss << error.location.first_line << ": ";
-                oss << error.message << "\n";
-            }
-
-            error_string = oss.str();
-        } else {
-            new_source = typedlua::compile(*root_node);
-        }
+        error_string = oss.str();
+    } else if (root_node) {
+        new_source = typedlua::compile(*root_node);
+    } else {
+        throw std::logic_error("How did you get here?");
     }
 
     if (new_source) {

@@ -371,6 +371,11 @@ public:
         return entries.size() - 1;
     }
 
+    int reserve(std::string name, Type type) {
+        entries.emplace_back(Entry{std::move(type), std::move(name)});
+        return entries.size() - 1;
+    }
+
     int reserve_narrow(std::string name) {
         entries.emplace_back(Entry{{}, std::move(name), true});
         return entries.size() - 1;

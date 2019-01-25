@@ -1272,7 +1272,7 @@ void NGlobalVar::check(Scope& parent_scope, std::vector<CompileError>& errors) c
         expr->check(parent_scope, errors);
     }
     for (const auto& name : names) {
-        parent_scope.add_name(name.name, name.get_type(parent_scope));
+        parent_scope.add_global_name(name.name, name.get_type(parent_scope));
     }
 }
 

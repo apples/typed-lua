@@ -35,6 +35,14 @@ public:
         names.insert_or_assign(name, std::move(type));
     }
 
+    void add_global_name(const std::string& name, Type type) {
+        if (parent) {
+            parent->add_global_name(name, std::move(type));
+        } else {
+            names.insert_or_assign(name, std::move(type));
+        }
+    }
+
     const Type* get_dots_type() const {
         switch (dots_state) {
             case DotsState::INHERIT: return parent->get_dots_type();

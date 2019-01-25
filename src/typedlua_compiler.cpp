@@ -8,7 +8,7 @@
 
 namespace typedlua {
 
-std::unique_ptr<ast::Node> parse(std::string_view source) {
+std::tuple<std::unique_ptr<ast::Node>, std::vector<CompileError>> parse(std::string_view source) {
     yyscan_t scanner;
 
     typedlualex_init(&scanner);
@@ -19,14 +19,16 @@ std::unique_ptr<ast::Node> parse(std::string_view source) {
     
     auto root = std::unique_ptr<ast::Node>{};
 
-    if (typedluaparse(scanner, root) != 0) {
+    auto errors = std::vector<CompileError>{};
+
+    if (typedluaparse(scanner, root, errors) != 0) {
         root = nullptr;
     }
 
     typedlua_delete_buffer(buffer, scanner);
     typedlualex_destroy(scanner);
 
-    return root;
+    return {std::move(root), std::move(errors)};
 }
 
 std::vector<CompileError> check(const ast::Node& root, Scope& scope) {

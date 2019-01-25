@@ -16,6 +16,8 @@ add_library(typedlua
     ${BISON_parser_OUTPUTS}
     ${FLEX_lexer_OUTPUTS}
     src/compile_error.hpp
+    src/libs_basic.cpp
+    src/libs.hpp
     src/loader.hpp
     src/loader.cpp
     src/node.hpp

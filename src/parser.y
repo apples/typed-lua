@@ -8,7 +8,7 @@
 // but due to a circular dependency, this seems impossible.
 %define api.pure full
 %lex-param {yyscan_t scanner}
-%parse-param {void* scanner} {std::unique_ptr<typedlua::ast::Node>& root}
+%parse-param {void* scanner} {std::unique_ptr<typedlua::ast::Node>& root} {std::vector<typedlua::CompileError>& errors}
 
 %locations
 
@@ -47,13 +47,18 @@
 
 %code {
     #include "lexer.hpp"
-    #include <iostream>
+    #include "compile_error.hpp"
 
     using namespace typedlua::ast;
 
-    static void yyerror(YYLTYPE* loc, void* scanner, std::unique_ptr<Node>& root, const char *s) {
-        std::cerr << "ERROR: " << s << "\n";
-        std::cerr << "  Line: " << loc->first_line << std::endl;
+    static void yyerror(
+        YYLTYPE* loc,
+        void* scanner,
+        std::unique_ptr<Node>& root,
+        std::vector<typedlua::CompileError>& errors,
+        const char *s)
+    {
+        errors.emplace_back(s, *loc);
     }
 
     template <typename T>
