@@ -17,6 +17,7 @@ int main(int argc, char **argv) {
 
         scope.enable_basic_types();
         typedlua::libs::import_basic(scope);
+        typedlua::libs::import_math(scope);
 
         errors = typedlua::check(*root_node, scope);
         auto new_source = typedlua::compile(*root_node);
