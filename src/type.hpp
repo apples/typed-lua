@@ -454,10 +454,7 @@ inline AssignResult is_assignable(const Type& lhs, const Type& rhs);
 inline Type narrow_field(Type tabletype, const std::string& fieldname, const Type& fieldtype);
 inline Type narrow_index(Type tabletype, const Type& keytype, const Type& valtype);
 
-inline std::optional<Type> get_field_type(const TableType& table, const std::string& key, std::vector<std::string>& notes);
-inline std::optional<Type> get_field_type(const SumType& sum, const std::string& key, std::vector<std::string>& notes);
-inline std::optional<Type> get_field_type(const DeferredType& defer, const std::string& key, std::vector<std::string>& notes);
-inline std::optional<Type> get_field_type(const Type& type, const std::string& key, std::vector<std::string>& notes);
+std::optional<Type> get_field_type(const Type& type, const std::string& key, std::vector<std::string>& notes, const std::unordered_map<LuaType, Type>& luatype_metatables);
 
 inline std::optional<Type> get_index_type(const TableType& table, const Type& key, std::vector<std::string>& notes);
 inline std::optional<Type> get_index_type(const SumType& sum, const Type& key, std::vector<std::string>& notes);
@@ -633,55 +630,6 @@ inline Type narrow_index(Type tabletype, const Type& keytype, const Type& valtyp
     }
 
     return Type::make_table(std::move(newindexes), table.fields);
-}
-
-inline std::optional<Type> get_field_type(const TableType& table, const std::string& key, std::vector<std::string>& notes) {
-    for (const auto& field : table.fields) {
-        if (field.name == key) {
-            return field.type;
-        }
-    }
-
-    return get_index_type(table, Type::make_luatype(LuaType::STRING), notes);
-}
-
-inline std::optional<Type> get_field_type(const SumType& sum, const std::string& key, std::vector<std::string>& notes) {
-    std::optional<Type> rv;
-
-    for (const auto& type : sum.types) {
-        auto t = get_field_type(type, key, notes);
-        if (t) {
-            if (!rv) {
-                rv = std::move(t);
-            } else {
-                rv = *rv | *t;
-            }
-        } else {
-            notes.push_back("Cannot find field '" + key + "' in `" + to_string(type) + "`");
-        }
-    }
-
-    return rv;
-}
-
-inline std::optional<Type> get_field_type(const DeferredType& defer, const std::string& key, std::vector<std::string>& notes) {
-    auto r = get_field_type(defer.collection->get(defer.id), key, notes);
-    if (!notes.empty()) {
-        notes.push_back("In deferred type '" + defer.collection->get_name(defer.id) + "'");
-    }
-    return r;
-}
-
-inline std::optional<Type> get_field_type(const Type& type, const std::string& key, std::vector<std::string>& notes) {
-    switch (type.get_tag()) {
-        case Type::Tag::ANY: return Type::make_any();
-        case Type::Tag::SUM: return get_field_type(type.get_sum(), key, notes);
-        case Type::Tag::TABLE: return get_field_type(type.get_table(), key, notes);
-        case Type::Tag::DEFERRED: return get_field_type(type.get_deferred(), key, notes);
-        default:
-            notes.push_back("Type `" + to_string(type) + "` has no fields");
-            return std::nullopt;
-    }
 }
 
 inline std::optional<Type> get_index_type(const TableType& table, const Type& key, std::vector<std::string>& notes) {

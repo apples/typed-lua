@@ -153,6 +153,36 @@ public:
         }
     }
 
+    void set_luatype_metatable(LuaType luatype, Type type) {
+        if (parent) {
+            throw std::logic_error("LuaType metatables can only be set on root scope");
+        }
+
+        luatype_metatables.insert_or_assign(luatype, std::move(type));
+    }
+
+    const Type* get_luatype_metatable(LuaType luatype) const {
+        if (parent) {
+            return parent->get_luatype_metatable(luatype);
+        }
+
+        auto iter = luatype_metatables.find(luatype);
+
+        if (iter != luatype_metatables.end()) {
+            return &iter->second;
+        }
+
+        return nullptr;
+    }
+
+    const std::unordered_map<LuaType, Type>& get_luatype_metatable_map() const {
+        if (parent) {
+            return parent->get_luatype_metatable_map();
+        }
+
+        return luatype_metatables;
+    }
+
 private:
     enum class DotsState {
         INHERIT,
@@ -174,6 +204,7 @@ private:
     std::optional<Type> return_type;
     ReturnState return_type_state = ReturnState::INHERIT;
     DeferredTypeCollection* deferred_types = nullptr;
+    std::unordered_map<LuaType, Type> luatype_metatables;
 };
 
 } // namespace typedlua

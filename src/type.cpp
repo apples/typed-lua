@@ -380,4 +380,71 @@ Type apply_genparams(
     }
 }
 
+namespace { // static
+
+std::optional<Type> get_field_type(const LuaType& luatype, const std::string& key, std::vector<std::string>& notes, const std::unordered_map<LuaType, Type>& luatype_metatables) {
+    auto iter = luatype_metatables.find(luatype);
+
+    if (iter != luatype_metatables.end()) {
+        return get_field_type(iter->second, key, notes, luatype_metatables);
+    }
+
+    notes.push_back("LuaType " + to_string(luatype) + " has no metatable");
+
+    return std::nullopt;
+}
+
+std::optional<Type> get_field_type(const TableType& table, const std::string& key, std::vector<std::string>& notes, const std::unordered_map<LuaType, Type>& luatype_metatables) {
+    for (const auto& field : table.fields) {
+        if (field.name == key) {
+            return field.type;
+        }
+    }
+
+    return get_index_type(table, Type::make_luatype(LuaType::STRING), notes);
+}
+
+std::optional<Type> get_field_type(const SumType& sum, const std::string& key, std::vector<std::string>& notes, const std::unordered_map<LuaType, Type>& luatype_metatables) {
+    std::optional<Type> rv;
+
+    for (const auto& type : sum.types) {
+        auto t = get_field_type(type, key, notes, luatype_metatables);
+        if (t) {
+            if (!rv) {
+                rv = std::move(t);
+            } else {
+                rv = *rv | *t;
+            }
+        } else {
+            notes.push_back("Cannot find field '" + key + "' in `" + to_string(type) + "`");
+        }
+    }
+
+    return rv;
+}
+
+std::optional<Type> get_field_type(const DeferredType& defer, const std::string& key, std::vector<std::string>& notes, const std::unordered_map<LuaType, Type>& luatype_metatables) {
+    auto r = get_field_type(defer.collection->get(defer.id), key, notes, luatype_metatables);
+    if (!notes.empty()) {
+        notes.push_back("In deferred type '" + defer.collection->get_name(defer.id) + "'");
+    }
+    return r;
+}
+
+} // static
+
+std::optional<Type> get_field_type(const Type& type, const std::string& key, std::vector<std::string>& notes, const std::unordered_map<LuaType, Type>& luatype_metatables) {
+    switch (type.get_tag()) {
+        case Type::Tag::ANY: return Type::make_any();
+        case Type::Tag::LUATYPE: return get_field_type(type.get_luatype(), key, notes, luatype_metatables);
+        case Type::Tag::SUM: return get_field_type(type.get_sum(), key, notes, luatype_metatables);
+        case Type::Tag::TABLE: return get_field_type(type.get_table(), key, notes, luatype_metatables);
+        case Type::Tag::DEFERRED: return get_field_type(type.get_deferred(), key, notes, luatype_metatables);
+        case Type::Tag::LITERAL: return get_field_type(type.get_literal().underlying_type, key, notes, luatype_metatables);
+        default:
+            notes.push_back("Type `" + to_string(type) + "` has no fields");
+            return std::nullopt;
+    }
+}
+
 } // namespace typedlua

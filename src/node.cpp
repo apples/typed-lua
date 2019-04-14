@@ -464,7 +464,7 @@ Type NTableAccess::get_type(const Scope& scope) const {
 void NTableAccess::check_common(const Type& prefixtype, Scope& parent_scope, std::vector<CompileError>& errors) const {
     std::vector<std::string> notes;
 
-    auto result = get_field_type(prefixtype, name, notes);
+    auto result = get_field_type(prefixtype, name, notes, parent_scope.get_luatype_metatable_map());
 
     if (!result) {
         notes.push_back("Could not find field '" + name + "' in `" + to_string(prefixtype) + "`");
@@ -578,7 +578,7 @@ void NFunctionSelfCall::check(Scope& parent_scope, std::vector<CompileError>& er
 
     std::vector<std::string> notes;
 
-    auto functype = get_field_type(prefixtype, name, notes);
+    auto functype = get_field_type(prefixtype, name, notes, parent_scope.get_luatype_metatable_map());
 
     if (!functype) {
         notes.push_back("Could not find method '" + name + "' in type `" + to_string(prefixtype) + "`");
@@ -1093,7 +1093,7 @@ void NSelfFunction::check(Scope& parent_scope, std::vector<CompileError>& errors
 
     std::vector<std::string> notes;
 
-    auto fieldtype = get_field_type(self_type, name, notes);
+    auto fieldtype = get_field_type(self_type, name, notes, parent_scope.get_luatype_metatable_map());
 
     if (fieldtype) {
         const auto r = is_assignable(*fieldtype, functype);

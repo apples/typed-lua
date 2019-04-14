@@ -45,6 +45,14 @@ void import_string(Scope& scope) {
 
         throw std::logic_error("Error: import_string: " + oss.str());
     }
+
+    auto string_type = scope.get_type_of("string");
+
+    if (!string_type) {
+        throw std::logic_error("Error: import_string: string table missing");
+    }
+
+    scope.set_luatype_metatable(LuaType::STRING, *string_type);
 }
 
 } // namespace typedlua::libs
