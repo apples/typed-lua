@@ -23,6 +23,7 @@ struct TypePrinter {
             case Type::Tag::DEFERRED: return to_string(type.get_deferred());
             case Type::Tag::LITERAL: return to_string(type.get_literal());
             case Type::Tag::NOMINAL: return to_string(type.get_nominal());
+            case Type::Tag::REQUIRE: return to_string(type.get_require());
             default: throw std::logic_error("Tag " + std::to_string(static_cast<int>(type.get_tag())) + " not implemented for to_string");
         }
     }
@@ -162,6 +163,14 @@ struct TypePrinter {
     std::string to_string(const NominalType& nominal) {
         return nominal.defer.collection->get_name(nominal.defer.id);
     }
+
+    std::string to_string(const RequireType& require) {
+        std::ostringstream oss;
+        oss << "$require(";
+        oss << to_string(*require.basis);
+        oss << ")";
+        return oss.str();
+    }
 };
 
 template <typename T>
@@ -278,6 +287,10 @@ std::string to_string(const LiteralType& literal) {
 
 std::string to_string(const NominalType& nominal) {
     return to_string_impl(nominal);
+}
+
+std::string to_string(const RequireType& require) {
+    return to_string_impl(require);
 }
 
 Type apply_genparams(

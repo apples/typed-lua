@@ -25,6 +25,8 @@ add_library(typedlua
     src/loader.cpp
     src/node.hpp
     src/node.cpp
+    src/require.hpp
+    src/require.cpp
     src/type.hpp
     src/type.cpp
     src/typedlua_compiler.cpp
@@ -39,6 +41,11 @@ add_executable(tlc src/main.cpp)
 set_target_properties(tlc PROPERTIES CXX_STANDARD 17)
 target_link_libraries(tlc typedlua)
 
-add_executable(example_simple examples/simple.cpp)
-set_target_properties(example_simple PROPERTIES CXX_STANDARD 17)
-target_link_libraries(example_simple typedlua)
+function(add_example name)
+    add_executable(example_${name} examples/${name}.cpp)
+    set_target_properties(example_${name} PROPERTIES CXX_STANDARD 17)
+    target_link_libraries(example_${name} typedlua)
+endfunction()
+
+add_example(simple)
+add_example(require)

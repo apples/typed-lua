@@ -1274,16 +1274,20 @@ NGlobalVar::NGlobalVar(std::vector<NNameDecl> n, std::vector<std::unique_ptr<NEx
 
 void NGlobalVar::check(Scope& parent_scope, std::vector<CompileError>& errors) const {
     for (const auto& name : names) {
-        if (parent_scope.get_type_of(name.name)) {
-            errors.emplace_back("Global variable shadows name `" + name.name + "`", location);
-        }
         name.check(parent_scope, errors);
     }
     for (const auto& expr : exprs) {
         expr->check(parent_scope, errors);
     }
     for (const auto& name : names) {
-        parent_scope.add_global_name(name.name, name.get_type(parent_scope));
+        if (auto type = parent_scope.get_type_of(name.name)) {
+            auto r = is_assignable(*type, name.get_type(parent_scope));
+            if (!r.yes) {
+                errors.emplace_back("Global variable conflict: " + to_string(r), location);
+            }
+        } else {
+            parent_scope.add_global_name(name.name, name.get_type(parent_scope));
+        }
     }
 }
 
