@@ -272,6 +272,17 @@ Type NTypeLiteralString::get_type(const Scope& scope) const {
     return Type::make_literal(value);
 }
 
+NTypeRequire::NTypeRequire(std::unique_ptr<NType> t)
+    : type(std::move(t)) {}
+
+void NTypeRequire::check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+    type->check(parent_scope, errors);
+}
+
+Type NTypeRequire::get_type(const Scope& scope) const {
+    return Type::make_require(type->get_type(scope));
+}
+
 NInterface::NInterface(std::string n, std::unique_ptr<NType> t)
     : name(std::move(n)), type(std::move(t)) {}
 
@@ -550,7 +561,7 @@ void NFunctionCall::check(Scope& parent_scope, std::vector<CompileError>& errors
                     }
                 }
 
-                cached_rettype = apply_genparams(genparams_inferred, func.nominals, *func.ret);
+                cached_rettype = apply_genparams(genparams_inferred, func.nominals, parent_scope.get_get_package_type(), *func.ret);
             }
         } break;
         default: errors.emplace_back("Cannot call non-function type `" + to_string(prefixtype) + "`", location); break;
@@ -632,7 +643,7 @@ void NFunctionSelfCall::check(Scope& parent_scope, std::vector<CompileError>& er
                         }
                     }
 
-                    cached_rettype = apply_genparams(genparams_inferred, func.nominals, *func.ret);
+                    cached_rettype = apply_genparams(genparams_inferred, func.nominals, parent_scope.get_get_package_type(), *func.ret);
                 }
             } break;
             default: errors.emplace_back("Cannot call non-function type `" + to_string(*functype) + "`", location); break;

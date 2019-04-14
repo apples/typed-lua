@@ -10,4 +10,6 @@ void import_math(Scope& scope);
 
 void import_string(Scope& scope);
 
+void import_package(Scope& scope);
+
 } // namespace typedlua::libs

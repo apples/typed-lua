@@ -18,6 +18,7 @@ add_library(typedlua
     src/compile_error.hpp
     src/libs_basic.cpp
     src/libs_math.cpp
+    src/libs_package.cpp
     src/libs_string.cpp
     src/libs.hpp
     src/loader.hpp

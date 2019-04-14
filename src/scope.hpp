@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <string>
 #include <optional>
+#include <functional>
 
 namespace typedlua {
 
@@ -183,6 +184,18 @@ public:
         return luatype_metatables;
     }
 
+    void set_get_package_type(std::function<Type(const std::string& name)> gpt) {
+        get_package_type = std::move(gpt);
+    }
+
+    const std::function<Type(const std::string& name)>& get_get_package_type() const {
+        if (!get_package_type && parent) {
+            return parent->get_get_package_type();
+        }
+        
+        return get_package_type;
+    }
+
 private:
     enum class DotsState {
         INHERIT,
@@ -205,6 +218,7 @@ private:
     ReturnState return_type_state = ReturnState::INHERIT;
     DeferredTypeCollection* deferred_types = nullptr;
     std::unordered_map<LuaType, Type> luatype_metatables;
+    std::function<Type(const std::string& name)> get_package_type;
 };
 
 } // namespace typedlua

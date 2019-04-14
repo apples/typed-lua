@@ -283,6 +283,7 @@ std::string to_string(const NominalType& nominal) {
 Type apply_genparams(
     const std::vector<std::optional<Type>>& genparams,
     const std::vector<int>& nominals,
+    const std::function<Type(const std::string& name)> get_package_type,
     const Type& type)
 {
     if (genparams.empty()) {
@@ -309,14 +310,14 @@ Type apply_genparams(
             fields.reserve(table.fields.size());
 
             for (const auto& index : table.indexes) {
-                auto key = apply_genparams(genparams, nominals, index.key);
-                auto val = apply_genparams(genparams, nominals, index.val);
+                auto key = apply_genparams(genparams, nominals, get_package_type, index.key);
+                auto val = apply_genparams(genparams, nominals, get_package_type, index.val);
 
                 indexes.push_back({std::move(key), std::move(val)});
             }
 
             for (const auto& field : table.fields) {
-                auto fieldtype = apply_genparams(genparams, nominals, field.type);
+                auto fieldtype = apply_genparams(genparams, nominals, get_package_type, field.type);
 
                 fields.push_back({field.name, fieldtype});
             }
@@ -330,9 +331,9 @@ Type apply_genparams(
 
             for (const auto& t : sum.types) {
                 if (rv) {
-                    rv = *rv | apply_genparams(genparams, nominals, t);
+                    rv = *rv | apply_genparams(genparams, nominals, get_package_type, t);
                 } else {
-                    rv = apply_genparams(genparams, nominals, t);
+                    rv = apply_genparams(genparams, nominals, get_package_type, t);
                 }
             }
 
@@ -346,7 +347,7 @@ Type apply_genparams(
             types.reserve(tuple.types.size());
 
             for (const auto& t : tuple.types) {
-                types.push_back(apply_genparams(genparams, nominals, t));
+                types.push_back(apply_genparams(genparams, nominals, get_package_type, t));
             }
 
             return Type::make_tuple(std::move(types), tuple.is_variadic);
@@ -359,14 +360,14 @@ Type apply_genparams(
             Type ret;
 
             for (const auto& gparam : func.genparams) {
-                gparams.push_back({gparam.name, apply_genparams(genparams, nominals, gparam.type)});
+                gparams.push_back({gparam.name, apply_genparams(genparams, nominals, get_package_type, gparam.type)});
             }
 
             for (const auto& param : func.params) {
-                params.push_back(apply_genparams(genparams, nominals, param));
+                params.push_back(apply_genparams(genparams, nominals, get_package_type, param));
             }
 
-            ret = apply_genparams(genparams, nominals, *func.ret);
+            ret = apply_genparams(genparams, nominals, get_package_type, *func.ret);
 
             return Type::make_function(
                 std::move(gparams),
@@ -374,6 +375,20 @@ Type apply_genparams(
                 std::move(params),
                 std::move(ret),
                 func.variadic);
+        }
+        case Type::Tag::REQUIRE: {
+            const auto& require = type.get_require();
+
+            auto inner_type = apply_genparams(genparams, nominals, get_package_type, *require.basis);
+
+            if (get_package_type && inner_type.get_tag() == Type::Tag::LITERAL) {
+                const auto& literal = inner_type.get_literal();
+                if (literal.underlying_type == LuaType::STRING) {
+                    return get_package_type(literal.string);
+                }
+            }
+
+            return Type::make_any();
         }
         default:
             return type;

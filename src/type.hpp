@@ -10,6 +10,7 @@
 #include <unordered_set>
 #include <optional>
 #include <variant>
+#include <functional>
 
 namespace typedlua {
 
@@ -226,6 +227,29 @@ struct NominalType {
     DeferredType defer;
 };
 
+struct RequireType {
+    std::unique_ptr<Type> basis;
+
+    RequireType() = default;
+    RequireType(std::unique_ptr<Type> basis) : basis(std::move(basis)) {}
+
+    RequireType(const RequireType& other) :
+        basis(std::make_unique<Type>(*other.basis))
+    {}
+
+    RequireType(RequireType&& other) = default;
+
+    RequireType& operator=(const RequireType& other) {
+        basis = std::make_unique<Type>(*other.basis);
+        return *this;
+    }
+
+    RequireType& operator=(RequireType&& other) {
+        std::swap(basis, other.basis);
+        return *this;
+    }
+};
+
 class Type {
 public:
     enum class Tag {
@@ -239,6 +263,7 @@ public:
         DEFERRED,
         LITERAL,
         NOMINAL,
+        REQUIRE,
     };
 
     Type() = default;
@@ -315,6 +340,12 @@ public:
         return type;
     }
 
+    static Type make_require(Type basis) {
+        auto type = Type{};
+        type.types = RequireType{std::make_unique<Type>(std::move(basis))};
+        return type;
+    }
+
     Tag get_tag() const { return static_cast<Tag>(types.index()); }
 
     const LuaType& get_luatype() const { return std::get<LuaType>(types); }
@@ -333,6 +364,8 @@ public:
 
     const NominalType& get_nominal() const { return std::get<NominalType>(types); }
 
+    const RequireType& get_require() const { return std::get<RequireType>(types); }
+
     friend Type operator|(const Type& lhs, const Type& rhs);
 
     friend Type operator-(const Type& lhs, const Type& rhs);
@@ -348,7 +381,8 @@ private:
         TableType,
         DeferredType,
         LiteralType,
-        NominalType>;
+        NominalType,
+        RequireType>;
 
     Types types;
 };
@@ -363,6 +397,7 @@ std::string to_string(const DeferredType& defer);
 std::string to_string(const LuaType& luatype);
 std::string to_string(const LiteralType& literal);
 std::string to_string(const NominalType& nominal);
+std::string to_string(const RequireType& require);
 
 class DeferredTypeCollection {
 public:
@@ -429,6 +464,7 @@ struct AssignResult {
 Type apply_genparams(
     const std::vector<std::optional<Type>>& genparams,
     const std::vector<int>& nominals,
+    const std::function<Type(const std::string& name)> get_package_type,
     const Type& type);
 
 template <typename RHS>
@@ -789,11 +825,11 @@ inline AssignResult is_assignable(const FunctionType& lfunc, const FunctionType&
         auto r = AssignResult{};
 
         if (i < lfunc.params.size()) {
-            auto lparam = apply_genparams(lgenparams, lfunc.nominals, lfunc.params[i]);
-            auto rparam = apply_genparams(rgenparams, rfunc.nominals, rfunc.params[i]);
+            auto lparam = apply_genparams(lgenparams, lfunc.nominals, {}, lfunc.params[i]);
+            auto rparam = apply_genparams(rgenparams, rfunc.nominals, {}, rfunc.params[i]);
             r = is_assignable(rparam, lparam);
         } else {
-            auto rparam = apply_genparams(rgenparams, rfunc.nominals, rfunc.params[i]);
+            auto rparam = apply_genparams(rgenparams, rfunc.nominals, {}, rfunc.params[i]);
             r = is_assignable(rparam, LuaType::NIL);
         }
 
@@ -803,8 +839,8 @@ inline AssignResult is_assignable(const FunctionType& lfunc, const FunctionType&
         }
     }
 
-    auto lret = apply_genparams(lgenparams, lfunc.nominals, *lfunc.ret);
-    auto rret = apply_genparams(rgenparams, lfunc.nominals, *rfunc.ret);
+    auto lret = apply_genparams(lgenparams, lfunc.nominals, {}, *lfunc.ret);
+    auto rret = apply_genparams(rgenparams, lfunc.nominals, {}, *rfunc.ret);
 
     auto r = is_assignable(lret, rret);
 

@@ -220,6 +220,17 @@ public:
     virtual Type get_type(const Scope& scope) const override;
 };
 
+class NTypeRequire : public NType {
+public:
+    NTypeRequire() = default;
+    NTypeRequire(std::unique_ptr<NType> t);
+    std::unique_ptr<NType> type;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
+
+    virtual Type get_type(const Scope& scope) const override;
+};
+
 class NInterface : public Node {
 public:
     NInterface() = default;

@@ -102,7 +102,7 @@
 %token TLOCAL TNIL TNOT TOR TREPEAT TRETURN
 %token TTHEN TTRUE TUNTIL TWHILE
 
-%token TGLOBAL TINTERFACE
+%token TGLOBAL TINTERFACE T_REQUIRE
 
 %token <string> TIDENTIFIER TNUMBER TSTRING
 
@@ -137,6 +137,7 @@
 %type <namedecls> namelist funcgenparams
 %type <type> commonunittype unittype type typetuple idtype tabletype
 %type <type> funcret rettype functype retunittype literaltype
+%type <type> requiretype
 %type <typefuncparams> typefuncparams
 %type <index> index
 %type <indexlist> indexes tableindexes
@@ -273,6 +274,7 @@ commonunittype: idtype { $$ = $1; }
               | '(' type ')' { $$ = $2; $$->location = @$; }
               | tabletype { $$ = $1; }
               | literaltype { $$ = $1; }
+              | requiretype { $$ = $1; }
               ;
 
 unittype: commonunittype { $$ = $1; }
@@ -294,6 +296,9 @@ literaltype: TFALSE { $$ = new NTypeLiteralBoolean(false); $$->location = @$; }
                $$->location = @$;
                delete $1;
            }
+           ;
+
+requiretype: T_REQUIRE '(' type ')' { $$ = new NTypeRequire(ptr($type)); $$->location = @$; }
            ;
 
 regfunctype: '(' ')' ':' rettype[ret] {
