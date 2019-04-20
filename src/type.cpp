@@ -475,4 +475,163 @@ std::optional<Type> get_field_type(const Type& type, const std::string& key, std
     }
 }
 
+namespace { // static
+
+std::optional<Type> get_index_type(const TableType& table, const Type& key, std::vector<std::string>& notes) {
+    for (const auto& index : table.indexes) {
+        if (is_assignable(index.key, key).yes) {
+            return index.val;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<Type> get_index_type(const SumType& sum, const Type& key, std::vector<std::string>& notes) {
+    std::optional<Type> rv;
+
+    for (const auto& type : sum.types) {
+        auto t = get_index_type(type, key, notes);
+        if (t) {
+            if (!rv) {
+                rv = std::move(t);
+            } else {
+                rv = *rv | *t;
+            }
+        } else {
+            notes.push_back("Cannot find index `" + to_string(key) + "` in `" + to_string(type) + "`");
+        }
+    }
+
+    return rv;
+}
+
+std::optional<Type> get_index_type(const DeferredType& defer, const Type& key, std::vector<std::string>& notes) {
+    return get_index_type(defer.collection->get(defer.id), key, notes);
+}
+
+} // static
+
+std::optional<Type> get_index_type(const Type& type, const Type& key, std::vector<std::string>& notes) {
+    switch (type.get_tag()) {
+        case Type::Tag::ANY: return Type::make_any();
+        case Type::Tag::SUM: return get_index_type(type.get_sum(), key, notes);
+        case Type::Tag::TABLE: return get_index_type(type.get_table(), key, notes);
+        case Type::Tag::DEFERRED: return get_index_type(type.get_deferred(), key, notes);
+        case Type::Tag::NOMINAL: return get_index_type(type.get_nominal().defer, key, notes);
+        default:
+            notes.push_back("Type `" + to_string(type) + "` has no indexes");
+            return std::nullopt;
+    }
+}
+
+namespace { // static
+
+std::optional<Type> resolve_overload(
+    const FunctionType& func,
+    const std::vector<Type>& args,
+    std::vector<std::string>& notes,
+    const std::function<Type(const std::string& name)>& get_package_type)
+{
+    if (args.size() > func.params.size() && !func.variadic) {
+        notes.emplace_back("Too many arguments for non-variadic function");
+        return std::nullopt;
+    } else {
+        auto nils = 0;
+
+        if (args.size() < func.params.size()) {
+            nils = func.params.size() - args.size();
+        }
+
+        auto genparams_inferred = std::vector<std::optional<Type>>{};
+
+        genparams_inferred.resize(func.genparams.size());
+
+        const auto sz = std::min(args.size() + nils, func.params.size());
+
+        auto nil = Type::make_luatype(LuaType::NIL);
+
+        for (auto i = 0u; i < sz; ++i) {
+            const auto& argstype = i < args.size() ? args[i] : nil;
+            const auto& lhstype = func.params[i];
+
+            auto r = check_param(lhstype, argstype, func.genparams, func.nominals, genparams_inferred);
+
+            if (!r.yes) {
+                r.messages.push_back("Invalid parameter " + std::to_string(i));
+                notes.emplace_back(to_string(r));
+                return std::nullopt;
+            } else if (!r.messages.empty()) {
+                notes.emplace_back(to_string(r));
+            }
+        }
+
+        return apply_genparams(genparams_inferred, func.nominals, get_package_type, *func.ret);
+    }
+}
+
+std::optional<Type> resolve_overload(
+    const ProductType& product,
+    const std::vector<Type>& args,
+    std::vector<std::string>& notes,
+    const std::function<Type(const std::string& name)>& get_package_type)
+{
+    auto all_notes = std::vector<std::string>{};
+
+    for (const auto& type : product.types) {
+        auto cur_notes = std::vector<std::string>{};
+        
+        auto result = resolve_overload(type, args, cur_notes, get_package_type);
+
+        if (result) {
+            notes.insert(
+                end(notes),
+                make_move_iterator(begin(cur_notes)),
+                make_move_iterator(end(cur_notes)));
+            
+            return result;
+        }
+
+        all_notes.insert(
+            end(all_notes),
+            make_move_iterator(begin(cur_notes)),
+            make_move_iterator(end(cur_notes)));
+    }
+
+    notes.insert(
+        end(notes),
+        make_move_iterator(begin(all_notes)),
+        make_move_iterator(end(all_notes)));
+    
+    return std::nullopt;
+}
+
+std::optional<Type> resolve_overload(
+    const DeferredType& defer,
+    const std::vector<Type>& args,
+    std::vector<std::string>& notes,
+    const std::function<Type(const std::string& name)>& get_package_type)
+{
+    return resolve_overload(defer.collection->get(defer.id), args, notes, get_package_type);
+}
+
+} // static
+
+std::optional<Type> resolve_overload(
+    const Type& type,
+    const std::vector<Type>& args,
+    std::vector<std::string>& notes,
+    const std::function<Type(const std::string& name)>& get_package_type)
+{
+    switch (type.get_tag()) {
+        case Type::Tag::ANY: return Type::make_any();
+        case Type::Tag::FUNCTION: return resolve_overload(type.get_function(), args, notes, get_package_type);
+        case Type::Tag::PRODUCT: return resolve_overload(type.get_product(), args, notes, get_package_type);
+        case Type::Tag::DEFERRED: return resolve_overload(type.get_deferred(), args, notes, get_package_type);
+        default:
+            notes.push_back("Type `" + to_string(type) + "` cannot be called");
+            return std::nullopt;
+    }
+}
+
 } // namespace typedlua

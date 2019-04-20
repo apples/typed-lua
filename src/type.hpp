@@ -78,6 +78,10 @@ struct SumType {
     std::vector<Type> types;
 };
 
+struct ProductType {
+    std::vector<Type> types;
+};
+
 using FieldMap = std::vector<NameType>;
 struct TableType {
     std::vector<KeyValPair> indexes;
@@ -259,6 +263,7 @@ public:
         FUNCTION,
         TUPLE,
         SUM,
+        PRODUCT,
         TABLE,
         DEFERRED,
         LITERAL,
@@ -356,6 +361,8 @@ public:
 
     const SumType& get_sum() const { return std::get<SumType>(types); }
 
+    const ProductType& get_sum() const { return std::get<ProductType>(types); }
+
     const TableType& get_table() const { return std::get<TableType>(types); }
 
     const DeferredType& get_deferred() const { return std::get<DeferredType>(types); }
@@ -367,6 +374,8 @@ public:
     const RequireType& get_require() const { return std::get<RequireType>(types); }
 
     friend Type operator|(const Type& lhs, const Type& rhs);
+    
+    friend Type operator&(const Type& lhs, const Type& rhs);
 
     friend Type operator-(const Type& lhs, const Type& rhs);
 
@@ -378,6 +387,7 @@ private:
         FunctionType,
         TupleType,
         SumType,
+        ProductType,
         TableType,
         DeferredType,
         LiteralType,
@@ -391,6 +401,7 @@ std::string to_string(const Type& type);
 std::string to_string(const FunctionType& function);
 std::string to_string(const TupleType& tuple);
 std::string to_string(const SumType& sum);
+std::string to_string(const ProductType& product);
 std::string to_string(const KeyValPair& kvp);
 std::string to_string(const TableType& table);
 std::string to_string(const DeferredType& defer);
@@ -481,6 +492,7 @@ inline AssignResult is_assignable(const LiteralType& lliteral, const LiteralType
 inline AssignResult is_assignable(const Type& lhs, const LuaType& rlua);
 inline AssignResult is_assignable(const Type& lhs, const FunctionType& rfunc);
 inline AssignResult is_assignable(const Type& lhs, const SumType& rsum);
+inline AssignResult is_assignable(const Type& lhs, const ProductType& rproduct);
 inline AssignResult is_assignable(const Type& lhs, const TupleType& rtuple);
 inline AssignResult is_assignable(const Type& lhs, const TableType& rtable);
 inline AssignResult is_assignable(const Type& lhs, const DeferredType& rdefer);
@@ -492,13 +504,14 @@ inline Type narrow_index(Type tabletype, const Type& keytype, const Type& valtyp
 
 std::optional<Type> get_field_type(const Type& type, const std::string& key, std::vector<std::string>& notes, const std::unordered_map<LuaType, Type>& luatype_metatables);
 
-inline std::optional<Type> get_index_type(const TableType& table, const Type& key, std::vector<std::string>& notes);
-inline std::optional<Type> get_index_type(const SumType& sum, const Type& key, std::vector<std::string>& notes);
-inline std::optional<Type> get_index_type(const DeferredType& defer, const Type& key, std::vector<std::string>& notes);
-inline std::optional<Type> get_index_type(const Type& type, const Type& key, std::vector<std::string>& notes);
+std::optional<Type> get_index_type(const Type& type, const Type& key, std::vector<std::string>& notes);
 
-inline std::optional<Type> get_return_type(const FunctionType& func, std::vector<std::string>& notes);
-inline std::optional<Type> get_return_type(const Type& type, std::vector<std::string>& notes);
+
+std::optional<Type> resolve_overload(
+    const Type& type,
+    const std::vector<Type>& args,
+    std::vector<std::string>& notes,
+    const std::function<Type(const std::string& name)>& get_package_type);
 
 inline Type operator|(const Type& lhs, const Type& rhs) {
     if (is_assignable(lhs, rhs).yes) {
@@ -529,6 +542,65 @@ inline Type operator|(const Type& lhs, const Type& rhs) {
         }
     } else {
         std::get<SumType>(rv.types).types.push_back(rhs);
+    }
+
+    return rv;
+}
+
+inline Type operator&(const Type& lhs, const Type& rhs) {
+    if (is_assignable(lhs, rhs).yes) {
+        return rhs;
+    }
+
+    if (is_assignable(rhs, lhs).yes) {
+        return lhs;
+    }
+
+    if (lhs.get_tag() == Type::Tag::SUM) {
+        auto rv = lhs;
+
+        auto& sum = std::get<SumType>(rv.types);
+
+        for (auto& type : sum.types) {
+            type = type & rhs;
+        }
+
+        return rv;
+    }
+
+    if (rhs.get_tag() == Type::Tag::SUM) {
+        auto rv = rhs;
+
+        auto& sum = std::get<SumType>(rv.types);
+
+        for (auto& type : sum.types) {
+            type = lhs & type;
+        }
+
+        return rv;
+    }
+
+    auto rv = Type{};
+    rv.types = ProductType{};
+
+    auto& product = std::get<ProductType>(rv.types);
+
+    const auto lhs_size = lhs.get_tag() == Type::Tag::PRODUCT ? lhs.get_sum().types.size() : 1;
+    const auto rhs_size = rhs.get_tag() == Type::Tag::PRODUCT ? rhs.get_sum().types.size() : 1;
+
+    product.types.reserve(lhs_size + rhs_size);
+
+    if (lhs.get_tag() == Type::Tag::PRODUCT) {
+        product.types = lhs.get_product().types;
+    } else {
+        product.types.push_back(lhs);
+    }
+
+    if (rhs.get_tag() == Type::Tag::PRODUCT) {
+        const auto& rhs_types = rhs.get_product().types;
+        product.types.insert(end(product.types), begin(rhs_types), end(rhs_types));
+    } else {
+        product.types.push_back(rhs);
     }
 
     return rv;
@@ -668,96 +740,6 @@ inline Type narrow_index(Type tabletype, const Type& keytype, const Type& valtyp
     return Type::make_table(std::move(newindexes), table.fields);
 }
 
-inline std::optional<Type> get_index_type(const TableType& table, const Type& key, std::vector<std::string>& notes) {
-    for (const auto& index : table.indexes) {
-        if (is_assignable(index.key, key).yes) {
-            return index.val;
-        }
-    }
-
-    return std::nullopt;
-}
-
-inline std::optional<Type> get_index_type(const SumType& sum, const Type& key, std::vector<std::string>& notes) {
-    std::optional<Type> rv;
-
-    for (const auto& type : sum.types) {
-        auto t = get_index_type(type, key, notes);
-        if (t) {
-            if (!rv) {
-                rv = std::move(t);
-            } else {
-                rv = *rv | *t;
-            }
-        } else {
-            notes.push_back("Cannot find index `" + to_string(key) + "` in `" + to_string(type) + "`");
-        }
-    }
-
-    return rv;
-}
-
-inline std::optional<Type> get_index_type(const DeferredType& defer, const Type& key, std::vector<std::string>& notes) {
-    return get_index_type(defer.collection->get(defer.id), key, notes);
-}
-
-inline std::optional<Type> get_index_type(const Type& type, const Type& key, std::vector<std::string>& notes) {
-    switch (type.get_tag()) {
-        case Type::Tag::ANY: return Type::make_any();
-        case Type::Tag::SUM: return get_index_type(type.get_sum(), key, notes);
-        case Type::Tag::TABLE: return get_index_type(type.get_table(), key, notes);
-        case Type::Tag::DEFERRED: return get_index_type(type.get_deferred(), key, notes);
-        case Type::Tag::NOMINAL: return get_index_type(type.get_nominal().defer, key, notes);
-        default:
-            notes.push_back("Type `" + to_string(type) + "` has no indexes");
-            return std::nullopt;
-    }
-}
-
-inline std::optional<Type> get_return_type(const FunctionType& func, std::vector<std::string>& notes) {
-    if (func.ret) {
-        return *func.ret;
-    } else {
-        notes.push_back("Function `" + to_string(func) + "` has no return type");
-        return std::nullopt;
-    }
-}
-
-inline std::optional<Type> get_return_type(const SumType& sum, std::vector<std::string>& notes) {
-    std::optional<Type> rv;
-
-    for (const auto& type : sum.types) {
-        auto t = get_return_type(type, notes);
-        if (t) {
-            if (!rv) {
-                rv = std::move(t);
-            } else {
-                rv = *rv | *t;
-            }
-        } else {
-            notes.push_back("Cannot call `" + to_string(sum) + "`");
-        }
-    }
-
-    return rv;
-}
-
-inline std::optional<Type> get_return_type(const DeferredType& defer, std::vector<std::string>& notes) {
-    return get_return_type(defer.collection->get(defer.id), notes);
-}
-
-inline std::optional<Type> get_return_type(const Type& type, std::vector<std::string>& notes) {
-    switch (type.get_tag()) {
-        case Type::Tag::ANY: return Type::make_any();
-        case Type::Tag::SUM: return get_return_type(type.get_sum(), notes);
-        case Type::Tag::FUNCTION: return get_return_type(type.get_function(), notes);
-        case Type::Tag::DEFERRED: return get_return_type(type.get_deferred(), notes);
-        default:
-            notes.push_back("Type `" + to_string(type) + "` cannot be called");
-            return std::nullopt;
-    }
-}
-
 inline std::string to_string(const AssignResult& ar) {
     std::string r;
     for (const auto& msg : ar.messages) {
@@ -770,6 +752,9 @@ template <typename T, typename U>
 std::string cannot_assign(const T& lhs, const U& rhs) {
     return "Cannot assign `" + to_string(rhs) + "` to `" + to_string(lhs) + "`";
 }
+
+
+/* TODO: IMPLEMENT ASSIGNMENT FOR PRODUCT TYPES
 
 template <typename RHS>
 AssignResult is_assignable(const SumType& lsum, const RHS& rhs) {

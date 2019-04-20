@@ -282,6 +282,10 @@ unittype: commonunittype { $$ = $1; }
             $$ = new NTypeSum(ptr($lhs), ptr($rhs));
             $$->location = @$;
         }
+        | unittype[lhs] '&' unittype[rhs] {
+            $$ = new NTypeProduct(ptr($lhs), ptr($rhs));
+            $$->location = @$;
+        }
         ;
 
 literaltype: TFALSE { $$ = new NTypeLiteralBoolean(false); $$->location = @$; }
