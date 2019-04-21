@@ -21,6 +21,7 @@ int main(int argc, char **argv) {
         typedlua::libs::import_package(scope);
         typedlua::libs::import_string(scope);
         typedlua::libs::import_table(scope);
+        typedlua::libs::import_io(scope);
 
         errors = typedlua::check(*root_node, scope);
         auto new_source = typedlua::compile(*root_node);

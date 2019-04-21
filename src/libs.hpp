@@ -14,4 +14,6 @@ void import_string(Scope& scope);
 
 void import_table(Scope& scope);
 
+void import_io(Scope& scope);
+
 } // namespace typedlua::libs

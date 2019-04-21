@@ -17,6 +17,7 @@ add_library(typedlua
     ${FLEX_lexer_OUTPUTS}
     src/compile_error.hpp
     src/libs_basic.cpp
+    src/libs_io.cpp
     src/libs_math.cpp
     src/libs_package.cpp
     src/libs_string.cpp
