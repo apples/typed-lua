@@ -145,6 +145,18 @@ Type NTypeSum::get_type(const Scope& scope) const {
     return lhs->get_type(scope) | rhs->get_type(scope);
 }
 
+NTypeProduct::NTypeProduct(std::unique_ptr<NType> l, std::unique_ptr<NType> r)
+    : lhs(std::move(l)), rhs(std::move(r)) {}
+
+void NTypeProduct::check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+    lhs->check(parent_scope, errors);
+    rhs->check(parent_scope, errors);
+}
+
+Type NTypeProduct::get_type(const Scope& scope) const {
+    return lhs->get_type(scope) & rhs->get_type(scope);
+}
+
 NIndex::NIndex(std::unique_ptr<NType> k, std::unique_ptr<NType> v)
     : key(std::move(k)), val(std::move(v)) {}
 
@@ -518,53 +530,33 @@ void NFunctionCall::check(Scope& parent_scope, std::vector<CompileError>& errors
 
     auto prefixtype = prefix->get_type(parent_scope);
 
-    switch (prefixtype.get_tag()) {
-        case Type::Tag::ANY: break;
-        case Type::Tag::FUNCTION: {
-            const auto& func = prefixtype.get_function();
+    auto arg_types = std::vector<Type>{};
 
-            auto rhs = std::vector<Type>{};
+    if (args) {
+        arg_types.reserve(args->args.size());
 
-            // Convert args into a semi-tuple
-            if (args) {
-                rhs.reserve(args->args.size());
+        for (const auto& expr : args->args) {
+            arg_types.push_back(expr->get_type(parent_scope));
+        }
+    }
 
-                for (const auto& expr : args->args) {
-                    rhs.push_back(expr->get_type(parent_scope));
-                }
-            }
+    std::vector<std::string> notes;
 
-            if (rhs.size() > func.params.size() && !func.variadic) {
-                errors.emplace_back("Too many arguments for non-variadic function", location);
-            } else {
-                if (rhs.size() < func.params.size()) {
-                    std::fill_n(std::back_inserter(rhs), func.params.size() - rhs.size(), Type::make_luatype(LuaType::NIL));
-                }
+    cached_rettype = resolve_overload(prefixtype, arg_types, notes, parent_scope.get_get_package_type());
 
-                std::vector<std::optional<Type>> genparams_inferred;
+    if (!notes.empty()) {
+        std::string msg;
+        for (const auto& note : notes) {
+            msg = note + "\n" + msg;
+        }
 
-                genparams_inferred.resize(func.genparams.size());
+        if (!cached_rettype) {
+            msg = "Type `" + to_string(prefixtype) + "` is not callable with these arguments.\n" + msg;
+        }
 
-                const auto sz = std::min(rhs.size(), func.params.size());
-
-                for (auto i = 0u; i < sz; ++i) {
-                    const auto& rhstype = rhs[i];
-                    const auto& lhstype = func.params[i];
-
-                    auto r = check_param(lhstype, rhstype, func.genparams, func.nominals, genparams_inferred);
-
-                    if (!r.yes) {
-                        r.messages.push_back("Invalid parameter " + std::to_string(i));
-                        errors.emplace_back(to_string(r), location);
-                    } else if (!r.messages.empty()) {
-                        errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
-                    }
-                }
-
-                cached_rettype = apply_genparams(genparams_inferred, func.nominals, parent_scope.get_get_package_type(), *func.ret);
-            }
-        } break;
-        default: errors.emplace_back("Cannot call non-function type `" + to_string(prefixtype) + "`", location); break;
+        auto sev = cached_rettype ? CompileError::Severity::WARNING : CompileError::Severity::ERROR;
+        
+        errors.emplace_back(sev, msg, location);
     }
 }
 
@@ -592,70 +584,35 @@ void NFunctionSelfCall::check(Scope& parent_scope, std::vector<CompileError>& er
     auto functype = get_field_type(prefixtype, name, notes, parent_scope.get_luatype_metatable_map());
 
     if (!functype) {
-        notes.push_back("Could not find method '" + name + "' in type `" + to_string(prefixtype) + "`");
+        errors.emplace_back("Could not find method '" + name + "' in type `" + to_string(prefixtype) + "`", location);
     } else {
-        cached_rettype = get_return_type(*functype, notes);
+        auto arg_types = std::vector<Type>{};
 
-        switch ((*functype).get_tag()) {
-            case Type::Tag::ANY: break;
-            case Type::Tag::FUNCTION: {
-                const auto& func = (*functype).get_function();
+        arg_types.reserve(1 + (args ? args->args.size() : 0));
+        arg_types.push_back(prefixtype);
 
-                auto rhs = std::vector<Type>{};
-
-                // Convert args into a semi-tuple
-                if (args) {
-                    rhs.reserve(args->args.size() + 1);
-
-                    rhs.push_back(prefixtype);
-
-                    for (const auto& expr : args->args) {
-                        rhs.push_back(expr->get_type(parent_scope));
-                    }
-                } else {
-                    rhs.push_back(prefixtype);
-                }
-
-                if (rhs.size() > func.params.size() && !func.variadic) {
-                    errors.emplace_back("Too many arguments for non-variadic function", location);
-                } else {
-                    if (rhs.size() < func.params.size()) {
-                        std::fill_n(std::back_inserter(rhs), func.params.size() - rhs.size(), Type::make_luatype(LuaType::NIL));
-                    }
-
-                    std::vector<std::optional<Type>> genparams_inferred;
-
-                    genparams_inferred.resize(func.genparams.size());
-
-                    const auto sz = std::min(rhs.size(), func.params.size());
-
-                    for (auto i = 0u; i < sz; ++i) {
-                        const auto& rhstype = rhs[i];
-                        const auto& lhstype = func.params[i];
-
-                        auto r = check_param(lhstype, rhstype, func.genparams, func.nominals, genparams_inferred);
-
-                        if (!r.yes) {
-                            r.messages.push_back("Invalid parameter " + std::to_string(i));
-                            errors.emplace_back(to_string(r), location);
-                        } else if (!r.messages.empty()) {
-                            errors.emplace_back(CompileError::Severity::WARNING, to_string(r), location);
-                        }
-                    }
-
-                    cached_rettype = apply_genparams(genparams_inferred, func.nominals, parent_scope.get_get_package_type(), *func.ret);
-                }
-            } break;
-            default: errors.emplace_back("Cannot call non-function type `" + to_string(*functype) + "`", location); break;
+        if (args) {
+            for (const auto& expr : args->args) {
+                arg_types.push_back(expr->get_type(parent_scope));
+            }
         }
-    }
 
-    if (!notes.empty()) {
-        std::string msg;
-        for (const auto& note : notes) {
-            msg = note + "\n" + msg;
+        cached_rettype = resolve_overload(*functype, arg_types, notes, parent_scope.get_get_package_type());
+        
+        if (!notes.empty()) {
+            std::string msg;
+            for (const auto& note : notes) {
+                msg = note + "\n" + msg;
+            }
+
+            if (!cached_rettype) {
+                msg = "Type `" + to_string(prefixtype) + "` is not callable with these arguments.\n" + msg;
+            }
+
+            auto sev = cached_rettype ? CompileError::Severity::WARNING : CompileError::Severity::ERROR;
+
+            errors.emplace_back(sev, msg, location);
         }
-        errors.emplace_back(msg, location);
     }
 }
 

@@ -131,6 +131,18 @@ public:
     virtual Type get_type(const Scope& scope) const override;
 };
 
+class NTypeProduct : public NType {
+public:
+    NTypeProduct() = default;
+    NTypeProduct(std::unique_ptr<NType> l, std::unique_ptr<NType> r);
+    std::unique_ptr<NType> lhs;
+    std::unique_ptr<NType> rhs;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
+
+    virtual Type get_type(const Scope& scope) const override;
+};
+
 class NIndex : public Node {
 public:
     NIndex() = default;
