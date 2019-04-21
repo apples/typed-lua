@@ -91,6 +91,7 @@ struct TableType {
 struct DeferredType {
     DeferredTypeCollection* collection;
     int id;
+    std::vector<std::optional<Type>> args;
 };
 
 struct NumberRep {
@@ -329,7 +330,13 @@ public:
 
     static Type make_deferred(DeferredTypeCollection& collection, int id) {
         auto type = Type{};
-        type.types = DeferredType{&collection, id};
+        type.types = DeferredType{&collection, id, {}};
+        return type;
+    }
+
+    static Type make_deferred(DeferredTypeCollection& collection, int id, std::vector<std::optional<Type>> args) {
+        auto type = Type{};
+        type.types = DeferredType{&collection, id, std::move(args)};
         return type;
     }
 
@@ -418,16 +425,16 @@ public:
     }
 
     int reserve(std::string name, Type type) {
-        entries.emplace_back(Entry{std::move(type), std::move(name)});
+        entries.emplace_back(Entry{std::move(type), std::move(name), {}, false});
         return entries.size() - 1;
     }
 
     int reserve_narrow(std::string name) {
-        entries.emplace_back(Entry{{}, std::move(name), true});
+        entries.emplace_back(Entry{{}, std::move(name), {}, true});
         return entries.size() - 1;
     }
 
-    const Type& get(int i) const {
+    const Type& get_type(int i) const {
         return entries[i].type;
     }
 
@@ -435,8 +442,16 @@ public:
         return entries[i].name;
     }
 
+    const std::vector<int>& get_nominals(int i) const {
+        return entries[i].nominals;
+    }
+
     void set(int i, Type t) {
         entries[i].type = std::move(t);
+    }
+
+    void set_nominals(int i, std::vector<int> nominals) {
+        entries[i].nominals = std::move(nominals);
     }
 
     bool is_narrowing(int i) const {
@@ -447,11 +462,22 @@ private:
     struct Entry {
         Type type;
         std::string name;
+        std::vector<int> nominals;
         bool narrowing = false;
     };
 
     std::vector<Entry> entries;
 };
+
+Type apply_genparams(
+    const std::vector<std::optional<Type>>& genparams,
+    const std::vector<int>& nominals,
+    const std::function<Type(const std::string& name)>& get_package_type,
+    const Type& type);
+
+Type reduce_deferred(
+    const DeferredType& defer,
+    const std::function<Type(const std::string& name)>& get_package_type);
 
 struct KeyValPair {
     Type key;
@@ -471,12 +497,6 @@ struct AssignResult {
     AssignResult(bool b) : yes(b) {}
     AssignResult(bool b, std::string m) : yes(b), messages{std::move(m)} {}
 };
-
-Type apply_genparams(
-    const std::vector<std::optional<Type>>& genparams,
-    const std::vector<int>& nominals,
-    const std::function<Type(const std::string& name)> get_package_type,
-    const Type& type);
 
 template <typename RHS>
 AssignResult is_assignable(const SumType& lsum, const RHS& rhs);
@@ -764,7 +784,7 @@ AssignResult is_assignable(const SumType& lsum, const RHS& rhs) {
 
 template <typename RHS>
 AssignResult is_assignable(const DeferredType& ldefer, const RHS& rhs) {
-    return is_assignable(ldefer.collection->get(ldefer.id), rhs);
+    return is_assignable(reduce_deferred(ldefer, {}), rhs);
 }
 
 inline AssignResult is_divisible(const ProductType& product, const Type& divisor) {
@@ -937,7 +957,7 @@ inline AssignResult is_assignable(const DeferredType& ldefer, const DeferredType
         return true;
     }
 
-    return is_assignable(ldefer.collection->get(ldefer.id), rdefer);
+    return is_assignable(reduce_deferred(ldefer, {}), rdefer);
 }
 
 inline AssignResult is_assignable(const LiteralType& lliteral, const LiteralType& rliteral) {
@@ -1029,7 +1049,7 @@ inline AssignResult is_assignable(const Type& lhs, const DeferredType& rdefer) {
         case Type::Tag::ANY: return true;
         case Type::Tag::SUM: return is_assignable(lhs.get_sum(), rdefer);
         case Type::Tag::DEFERRED: return is_assignable(lhs.get_deferred(), rdefer);
-        default: return is_assignable(lhs, rdefer.collection->get(rdefer.id));
+        default: return is_assignable(lhs, reduce_deferred(rdefer, {}));
     }
 }
 
@@ -1099,7 +1119,7 @@ inline AssignResult check_param(
     switch (arg.get_tag()) {
         case Type::Tag::DEFERRED: {
             const auto& defer = arg.get_deferred();
-            return check_param(param, defer.collection->get(defer.id), genparams, nominals, genparams_inferred);
+            return check_param(param, reduce_deferred(defer, {}), genparams, nominals, genparams_inferred);
         }
     }
 
@@ -1177,7 +1197,7 @@ inline AssignResult check_param(
         } break;
         case Type::Tag::DEFERRED: {
             const auto& defer = param.get_deferred();
-            const auto& type = defer.collection->get(defer.id);
+            const auto& type = reduce_deferred(defer, {});
 
             auto r = check_param(type, arg, genparams, nominals, genparams_inferred);
 

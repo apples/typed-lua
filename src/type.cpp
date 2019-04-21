@@ -158,7 +158,19 @@ struct TypePrinter {
             queue.emplace(defer.id, defer);
         }
 
-        return defer.collection->get_name(defer.id);
+        std::ostringstream oss;
+        oss << defer.collection->get_name(defer.id);
+        oss << "<";
+        bool first = true;
+        for (const auto& type : defer.args) {
+            if (!first) {
+                oss << ",";
+            }
+            oss << to_string(type.value_or(Type::make_any()));
+            first = false;
+        }
+        oss << ">";
+        return oss.str();
     }
 
     std::string to_string(const NominalType& nominal) {
@@ -200,7 +212,7 @@ std::string to_string_impl(const T& type) {
         tp.seen.insert(iter->first);
         tp.queue.erase(iter);
 
-        result += " with " + defer.collection->get_name(defer.id) + ":" + tp.to_string(defer.collection->get(defer.id));
+        result += " with " + tp.to_string(defer) + ":" + tp.to_string(reduce_deferred(defer, {}));
     }
 
     return result;
@@ -314,18 +326,33 @@ std::string to_string(const ProductType& product) {
 Type apply_genparams(
     const std::vector<std::optional<Type>>& genparams,
     const std::vector<int>& nominals,
-    const std::function<Type(const std::string& name)> get_package_type,
+    const std::function<Type(const std::string& name)>& get_package_type,
     const Type& type)
 {
-    if (genparams.empty()) {
-        return type;
-    }
-
     switch (type.get_tag()) {
+        case Type::Tag::DEFERRED: {
+            const auto& defer = type.get_deferred();
+            auto newargs = std::vector<std::optional<Type>>{};
+            newargs.reserve(defer.args.size());
+
+            for (const auto& arg : defer.args) {
+                if (arg) {
+                    newargs.push_back(apply_genparams(genparams, nominals, get_package_type, *arg));
+                } else {
+                    newargs.push_back(std::nullopt);
+                }
+            }
+
+            return Type::make_deferred(*defer.collection, defer.id, std::move(newargs));
+        }
         case Type::Tag::NOMINAL: {
             for (auto i = 0u; i < nominals.size(); ++i) {
                 if (nominals[i] == type.get_nominal().defer.id) {
-                    return genparams[i].value_or(Type::make_any());
+                    if (i < genparams.size()) {
+                        return genparams[i].value_or(Type::make_any());
+                    } else {
+                        return Type::make_any();
+                    }
                 }
             }
 
@@ -426,6 +453,19 @@ Type apply_genparams(
     }
 }
 
+Type reduce_deferred(
+    const DeferredType& defer,
+    const std::function<Type(const std::string& name)>& get_package_type)
+{
+    std::vector<std::optional<Type>> argtypes;
+    argtypes.resize(defer.args.size());
+
+    const auto& basetype = defer.collection->get_type(defer.id);
+    const auto& nominals = defer.collection->get_nominals(defer.id);
+
+    return apply_genparams(defer.args, nominals, get_package_type, basetype);
+}
+
 namespace { // static
 
 std::optional<Type> get_index_type(const TableType& table, const Type& key, std::vector<std::string>& notes);
@@ -466,7 +506,7 @@ std::optional<Type> get_index_type(const SumType& sum, const Type& key, std::vec
 }
 
 std::optional<Type> get_index_type(const DeferredType& defer, const Type& key, std::vector<std::string>& notes) {
-    return get_index_type(defer.collection->get(defer.id), key, notes);
+    return get_index_type(reduce_deferred(defer, {}), key, notes);
 }
 
 std::optional<Type> get_field_type(const LuaType& luatype, const std::string& key, std::vector<std::string>& notes, const std::unordered_map<LuaType, Type>& luatype_metatables) {
@@ -511,7 +551,7 @@ std::optional<Type> get_field_type(const SumType& sum, const std::string& key, s
 }
 
 std::optional<Type> get_field_type(const DeferredType& defer, const std::string& key, std::vector<std::string>& notes, const std::unordered_map<LuaType, Type>& luatype_metatables) {
-    auto r = get_field_type(defer.collection->get(defer.id), key, notes, luatype_metatables);
+    auto r = get_field_type(reduce_deferred(defer, {}), key, notes, luatype_metatables);
     if (!notes.empty()) {
         notes.push_back("In deferred type '" + defer.collection->get_name(defer.id) + "'");
     }
@@ -634,7 +674,7 @@ std::optional<Type> resolve_overload(
     std::vector<std::string>& notes,
     const std::function<Type(const std::string& name)>& get_package_type)
 {
-    return resolve_overload(defer.collection->get(defer.id), args, notes, get_package_type);
+    return resolve_overload(reduce_deferred(defer, get_package_type), args, notes, get_package_type);
 }
 
 } // static

@@ -43,6 +43,7 @@
     typedlua::ast::NFieldDecl* fielddecl;
     typedlua::ast::NFieldDeclList* fielddecllist;
     typedlua::ast::NTypeFunction* typefunction;
+    std::vector<std::unique_ptr<typedlua::ast::NType>>* types;
 }
 
 %code {
@@ -137,13 +138,14 @@
 %type <namedecls> namelist funcgenparams
 %type <type> commonunittype unittype type typetuple idtype tabletype
 %type <type> funcret rettype functype retunittype literaltype
-%type <type> requiretype
+%type <type> requiretype genericcalltype
 %type <typefuncparams> typefuncparams
 %type <index> index
 %type <indexlist> indexes tableindexes
 %type <fielddecl> fielddecl
 %type <fielddecllist> fielddecls tablefields
 %type <typefunction> regfunctype
+%type <types> typelist
 
 %start chunk
 
@@ -275,6 +277,7 @@ commonunittype: idtype { $$ = $1; }
               | tabletype { $$ = $1; }
               | literaltype { $$ = $1; }
               | requiretype { $$ = $1; }
+              | genericcalltype { $$ = $1; }
               ;
 
 unittype: commonunittype { $$ = $1; }
@@ -304,6 +307,20 @@ literaltype: TFALSE { $$ = new NTypeLiteralBoolean(false); $$->location = @$; }
 
 requiretype: T_REQUIRE '(' type ')' { $$ = new NTypeRequire(ptr($type)); $$->location = @$; }
            ;
+
+genericcalltype: idtype '<' typelist '>' {
+                   $$ = new NTypeGenericCall(ptr($idtype), std::move(*$typelist));
+                   $$->location = @$;
+                   delete $typelist;
+               }
+               ;
+
+typelist: type {
+            $$ = new std::vector<std::unique_ptr<NType>>{};
+            $$->push_back(ptr($type));
+        }
+        | typelist ',' type { $$->push_back(ptr($type)); }
+        ;
 
 regfunctype: '(' ')' ':' rettype[ret] {
                $$ = new NTypeFunction({}, std::unique_ptr<NType>($ret), false);
@@ -503,6 +520,12 @@ interface: TINTERFACE TIDENTIFIER[name] ':' type {
              $$ = new NInterface(std::move(*$name), ptr($type));
              $$->location = @$;
              delete $name;
+         }
+         | TINTERFACE TIDENTIFIER[name] '<' namelist '>' ':' type {
+             $$ = new NInterface(std::move(*$name), ptr($type), std::move(*$namelist));
+             $$->location = @$;
+             delete $name;
+             delete $namelist;
          }
          ;
 

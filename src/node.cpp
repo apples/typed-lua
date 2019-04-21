@@ -295,8 +295,58 @@ Type NTypeRequire::get_type(const Scope& scope) const {
     return Type::make_require(type->get_type(scope));
 }
 
+NTypeGenericCall::NTypeGenericCall(std::unique_ptr<NType> t, std::vector<std::unique_ptr<NType>> a)
+    : type(std::move(t)), args(std::move(a)) {}
+
+void NTypeGenericCall::check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+    type->check(parent_scope, errors);
+
+    auto realtype = type->get_type(parent_scope);
+
+    if (realtype.get_tag() != Type::Tag::DEFERRED) {
+        errors.emplace_back("Type `" + to_string(realtype) + "` is not a generic type", location);
+    }
+
+    const auto& defer = realtype.get_deferred();
+    const auto& nominals = defer.collection->get_nominals(defer.id);
+
+    if (args.size() < nominals.size()) {
+        errors.emplace_back("Not enough arguments", location);
+    } else if (args.size() > nominals.size()) {
+        errors.emplace_back("Too many arguments", location);
+    } else {
+        std::vector<std::optional<Type>> argtypes;
+        argtypes.resize(args.size());
+
+        for (auto i = 0; i < args.size(); ++i) {
+            const auto& a = args[i];
+            const auto& paramtype = defer.collection->get_type(nominals[i]);
+
+            a->check(parent_scope, errors);
+            auto argtype = a->get_type(parent_scope);
+
+            auto r = is_assignable(paramtype, argtype);
+
+            if (!r.yes) {
+                errors.emplace_back(to_string(r), location);
+            } else {
+                argtypes[i] = std::move(argtype);
+            }
+        }
+
+        cached_type = Type::make_deferred(*defer.collection, defer.id, std::move(argtypes));
+    }
+}
+
+Type NTypeGenericCall::get_type(const Scope& scope) const {
+    return cached_type.value_or(Type::make_any());
+}
+
 NInterface::NInterface(std::string n, std::unique_ptr<NType> t)
     : name(std::move(n)), type(std::move(t)) {}
+
+NInterface::NInterface(std::string n, std::unique_ptr<NType> t, std::vector<NNameDecl> p)
+    : name(std::move(n)), type(std::move(t)), params(std::move(p)) {}
 
 void NInterface::check(Scope& parent_scope, std::vector<CompileError>& errors) const {
     if (auto oldtype = parent_scope.get_type(name)) {
@@ -307,9 +357,23 @@ void NInterface::check(Scope& parent_scope, std::vector<CompileError>& errors) c
     const auto deferred_id = deferred.reserve(name);
 
     parent_scope.add_type(name, Type::make_deferred(deferred, deferred_id));
-    type->check(parent_scope, errors);
 
-    deferred.set(deferred_id, type->get_type(parent_scope));
+    auto scope = Scope(&parent_scope);
+    auto nominals = std::vector<int>{};
+
+    for (auto i = 0u; i < params.size(); ++i) {
+        const auto& gparam = params[i];
+        auto defer_id = deferred.reserve(gparam.name);
+        deferred.set(defer_id, gparam.get_type(scope));
+        scope.add_type(gparam.name, Type::make_nominal(deferred, defer_id));
+        nominals.push_back(defer_id);
+    }
+
+    deferred.set_nominals(deferred_id, std::move(nominals));
+
+    type->check(scope, errors);
+
+    deferred.set(deferred_id, type->get_type(scope));
 }
 
 void NInterface::dump(std::ostream& out) const {
@@ -334,7 +398,7 @@ void NIdent::check_expect(Scope& parent_scope, const Type& expected, std::vector
                 return;
             }
 
-            const auto& current_type = defer.collection->get(defer.id);
+            const auto& current_type = reduce_deferred(defer, parent_scope.get_get_package_type());
 
             auto narrowed_type = current_type | expected;
 
@@ -390,7 +454,7 @@ void NSubscript::check_expect(Scope& parent_scope, const Type& expected, std::ve
             return check_common(prefixtype, keytype, parent_scope, errors);
         }
 
-        const auto& current_type = defer.collection->get(defer.id);
+        const auto& current_type = reduce_deferred(defer, parent_scope.get_get_package_type());
 
         if (current_type.get_tag() != Type::Tag::TABLE) {
             return check_common(prefixtype, keytype, parent_scope, errors);
@@ -458,7 +522,7 @@ void NTableAccess::check_expect(Scope& parent_scope, const Type& expected, std::
             return check_common(prefixtype, parent_scope, errors);
         }
 
-        const auto& current_type = defer.collection->get(defer.id);
+        const auto& current_type = reduce_deferred(defer, parent_scope.get_get_package_type());
 
         if (current_type.get_tag() != Type::Tag::TABLE) {
             return check_common(prefixtype, parent_scope, errors);
@@ -1049,7 +1113,7 @@ void NSelfFunction::check(Scope& parent_scope, std::vector<CompileError>& errors
         const auto& defer = self_type.get_deferred();
 
         if (defer.collection->is_narrowing(defer.id)) {
-            const auto& current_type = defer.collection->get(defer.id);
+            const auto& current_type = reduce_deferred(defer, parent_scope.get_get_package_type());
 
             if (current_type.get_tag() == Type::Tag::TABLE) {
                 auto narrowed_type = narrow_field(current_type, name, functype);

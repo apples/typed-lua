@@ -243,12 +243,27 @@ public:
     virtual Type get_type(const Scope& scope) const override;
 };
 
+class NTypeGenericCall : public NType {
+public:
+    NTypeGenericCall() = default;
+    NTypeGenericCall(std::unique_ptr<NType> t, std::vector<std::unique_ptr<NType>> a);
+    std::unique_ptr<NType> type;
+    std::vector<std::unique_ptr<NType>> args;
+    mutable std::optional<Type> cached_type;
+
+    virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
+
+    virtual Type get_type(const Scope& scope) const override;
+};
+
 class NInterface : public Node {
 public:
     NInterface() = default;
     NInterface(std::string n, std::unique_ptr<NType> t);
+    NInterface(std::string n, std::unique_ptr<NType> t, std::vector<NNameDecl> p);
     std::string name;
     std::unique_ptr<NType> type;
+    std::vector<NNameDecl> params;
 
     virtual void check(Scope& parent_scope, std::vector<CompileError>& errors) const;
 
