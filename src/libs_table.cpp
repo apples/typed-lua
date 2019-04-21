@@ -10,11 +10,31 @@ namespace typedlua::libs {
 
 void import_table(Scope& scope) {
     auto [node, errors] = parse(R"(
-        interface list: { [number]: string | number }
+        interface list<T>: { [number]: T }
 
         global table: {
-            concat: (list: list, sep: string | nil, i: number | nil, j: number | nil): string
-            insert: ((list: list, value: any): void) & ((list: list, pos: number, value: any): void)
+            concat:
+                ((list: list<string | number>): string) &
+                ((list: list<string | number>, sep: string): string) &
+                ((list: list<string | number>, sep: string, i: number): string) &
+                ((list: list<string | number>, sep: string, i: number, j: number): string)
+            insert:
+                (<T>(list: list<T>, value: T): void) &
+                (<T>(list: list<T>, pos: number, value: T): void)
+            move:
+                (<T: {}>(a1: T, f: number, e: number, t: number): T) &
+                (<T: {}, U: {}>(a1: T, f: number, e: number, t: number, a2: U): U)
+            pack: (...): { [number]: any; n: number }
+            remove:
+                (<T>(list: list<T>): T) &
+                (<T>(list: list<T>, pos: number): T)
+            sort:
+                ((list: list<any>): void) &
+                (<T>(list: list<T>, comp: (l: T, r: T): boolean): void)
+            unpack:
+                ((list: list<any>): [...]) &
+                ((list: list<any>, i: number): [...]) &
+                ((list: list<any>, i: number, j: number): [...])
         }
     )");
 

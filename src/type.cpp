@@ -388,10 +388,27 @@ Type apply_genparams(
             std::optional<Type> rv;
 
             for (const auto& t : sum.types) {
+                auto t2 = apply_genparams(genparams, nominals, get_package_type, t);
                 if (rv) {
-                    rv = *rv | apply_genparams(genparams, nominals, get_package_type, t);
+                    rv = std::move(*rv) | std::move(t2);
                 } else {
-                    rv = apply_genparams(genparams, nominals, get_package_type, t);
+                    rv = std::move(t2);
+                }
+            }
+
+            return rv.value_or(Type::make_any());
+        }
+        case Type::Tag::PRODUCT: {
+            const auto& product = type.get_product();
+
+            std::optional<Type> rv;
+
+            for (const auto& t : product.types) {
+                auto t2 = apply_genparams(genparams, nominals, get_package_type, t);
+                if (rv) {
+                    rv = std::move(*rv) & std::move(t2);
+                } else {
+                    rv = std::move(t2);
                 }
             }
 

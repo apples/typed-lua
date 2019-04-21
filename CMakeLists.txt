@@ -20,6 +20,7 @@ add_library(typedlua
     src/libs_math.cpp
     src/libs_package.cpp
     src/libs_string.cpp
+    src/libs_table.cpp
     src/libs.hpp
     src/loader.hpp
     src/loader.cpp

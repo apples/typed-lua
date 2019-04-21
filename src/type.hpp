@@ -605,8 +605,8 @@ inline Type operator&(const Type& lhs, const Type& rhs) {
 
     auto& product = std::get<ProductType>(rv.types);
 
-    const auto lhs_size = lhs.get_tag() == Type::Tag::PRODUCT ? lhs.get_sum().types.size() : 1;
-    const auto rhs_size = rhs.get_tag() == Type::Tag::PRODUCT ? rhs.get_sum().types.size() : 1;
+    const auto lhs_size = lhs.get_tag() == Type::Tag::PRODUCT ? lhs.get_product().types.size() : 1;
+    const auto rhs_size = rhs.get_tag() == Type::Tag::PRODUCT ? rhs.get_product().types.size() : 1;
 
     product.types.reserve(lhs_size + rhs_size);
 
@@ -1208,7 +1208,8 @@ inline AssignResult check_param(
             return r;
         } break;
         default: {
-            return is_assignable(param, arg);
+            auto reduced_param = apply_genparams(genparams_inferred, nominals, {}, param);
+            return is_assignable(reduced_param, arg);
         } break;
     }
 }
