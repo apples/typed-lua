@@ -10,7 +10,7 @@ Current roadmap:
 1. ~~Implement a Lua 5.3 parser that can output the same or equivalent code.~~
 2. ~~Add types and static type checking to the parser.~~
 3. ~~Add interfaces and classes.~~ (moved classes to stretch goals).
-4. Add imported type checking.
+4. ~~Add imported type checking.~~
 
 Goals:
 
@@ -31,3 +31,4 @@ Not Goals:
 - Additional standard libraries.
 - Additional primitive data types.
 - Working outside of the PUC Lua or LuaJit runtimes.
+- Bundling or minification
