@@ -53,6 +53,7 @@ struct TypePrinter {
                 }
                 break;
             case LuaType::STRING: oss << "'" << literal.string << "'"; break;
+            default: throw std::logic_error("LiteralType underlying type not implemented for to_string");
         }
         return oss.str();
     }

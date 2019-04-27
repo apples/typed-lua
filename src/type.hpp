@@ -166,6 +166,8 @@ struct LiteralType {
             case LuaType::STRING:
                 new (&string) std::string(std::move(other.string));
                 break;
+            default:
+                throw std::logic_error("Invalid underlying_type for LiteralType");
         }
     }
 
@@ -178,6 +180,8 @@ struct LiteralType {
             case LuaType::STRING:
                 new (&string) std::string(other.string);
                 break;
+            default:
+                throw std::logic_error("Invalid underlying_type for LiteralType");
         }
     }
 
@@ -185,6 +189,8 @@ struct LiteralType {
         switch (underlying_type) {
             case LuaType::STRING:
                 std::destroy_at(&string);
+                break;
+            default:
                 break;
         }
 
@@ -195,6 +201,8 @@ struct LiteralType {
             case LuaType::STRING:
                 new (&string) std::string(std::move(other.string));
                 break;
+            default:
+                throw std::logic_error("Invalid underlying_type for LiteralType");
         }
 
         return *this;
@@ -205,6 +213,8 @@ struct LiteralType {
             case LuaType::STRING:
                 std::destroy_at(&string);
                 break;
+            default:
+                break;
         }
         
         underlying_type = other.underlying_type;
@@ -214,6 +224,8 @@ struct LiteralType {
             case LuaType::STRING:
                 new (&string) std::string(other.string);
                 break;
+            default:
+                throw std::logic_error("Invalid underlying_type for LiteralType");
         }
 
         return *this;
@@ -223,6 +235,8 @@ struct LiteralType {
         switch (underlying_type) {
             case LuaType::STRING:
                 std::destroy_at(&string);
+                break;
+            default:
                 break;
         }
     }
@@ -687,6 +701,8 @@ inline Type operator-(const Type& lhs, const Type& rhs) {
                                     return lliteral.number == rliteral.number;
                                 case LuaType::STRING:
                                     return lliteral.string == rliteral.string;
+                                default:
+                                    throw std::logic_error("Invalid underlying_type for LiteralType");
                             }
                         }
 
@@ -699,7 +715,11 @@ inline Type operator-(const Type& lhs, const Type& rhs) {
                         return lhs;
                     }
                 }
+                default:
+                    break;
             }
+            break;
+        default:
             break;
     }
 
@@ -1116,11 +1136,9 @@ inline AssignResult check_param(
     const std::vector<int>& nominals,
     std::vector<std::optional<Type>>& genparams_inferred)
 {
-    switch (arg.get_tag()) {
-        case Type::Tag::DEFERRED: {
-            const auto& defer = arg.get_deferred();
-            return check_param(param, reduce_deferred(defer, {}), genparams, nominals, genparams_inferred);
-        }
+    if (arg.get_tag() == Type::Tag::DEFERRED) {
+        const auto& defer = arg.get_deferred();
+        return check_param(param, reduce_deferred(defer, {}), genparams, nominals, genparams_inferred);
     }
 
     switch (param.get_tag()) {
