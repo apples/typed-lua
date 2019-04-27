@@ -985,7 +985,7 @@ std::vector<Type> NFuncParams::get_types(const Scope& scope) const {
 FunctionBase::FunctionBase(std::vector<NNameDecl> g, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b)
     : generic_params(std::move(g)), params(std::move(p)), ret(std::move(r)), block(std::move(b)) {}
 
-Type FunctionBase::check(Scope& parent_scope, std::vector<CompileError>& errors) const {
+Type FunctionBase::check(Scope& parent_scope, std::vector<CompileError>& errors, const std::optional<std::string>& local_name) const {
     auto return_type = Type{};
 
     nominals.clear();
@@ -1025,11 +1025,19 @@ Type FunctionBase::check(Scope& parent_scope, std::vector<CompileError>& errors)
 
         this_scope.set_return_type(return_type);
 
+        if (local_name) {
+            this_scope.add_name(*local_name, get_type(this_scope, return_type));
+        }
+
         block->check(this_scope, errors);
     } else {
         auto this_scope = setup_scope();
 
         this_scope.deduce_return_type();
+
+        if (local_name) {
+            this_scope.add_name(*local_name, get_type(this_scope, Type::make_any()));
+        }
 
         block->check(this_scope, errors);
 
@@ -1079,7 +1087,7 @@ NFunction::NFunction(FunctionBase fb, std::unique_ptr<NExpr> e)
     : base(std::move(fb)), expr(std::move(e)) {}
 
 void NFunction::check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-    auto return_type = base.check(parent_scope, errors);
+    auto return_type = base.check(parent_scope, errors, {});
 
     const auto functype = base.get_type(parent_scope, return_type);
 
@@ -1105,7 +1113,7 @@ void NSelfFunction::check(Scope& parent_scope, std::vector<CompileError>& errors
 
     scope.add_name("self", self_type);
 
-    auto return_type = base.check(scope, errors);
+    auto return_type = base.check(scope, errors, {});
 
     const auto functype = base.get_type(scope, return_type, self_type);
 
@@ -1160,7 +1168,7 @@ NLocalFunction::NLocalFunction(FunctionBase fb, std::string n)
     : base(std::move(fb)), name(std::move(n)) {}
 
 void NLocalFunction::check(Scope& parent_scope, std::vector<CompileError>& errors) const {
-    auto return_type = base.check(parent_scope, errors);
+    auto return_type = base.check(parent_scope, errors, name);
 
     const auto functype = base.get_type(parent_scope, return_type);
 

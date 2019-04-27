@@ -1136,11 +1136,6 @@ inline AssignResult check_param(
     const std::vector<int>& nominals,
     std::vector<std::optional<Type>>& genparams_inferred)
 {
-    if (arg.get_tag() == Type::Tag::DEFERRED) {
-        const auto& defer = arg.get_deferred();
-        return check_param(param, reduce_deferred(defer, {}), genparams, nominals, genparams_inferred);
-    }
-
     switch (param.get_tag()) {
         case Type::Tag::NOMINAL: {
             auto id = param.get_nominal().defer.id;
@@ -1165,40 +1160,68 @@ inline AssignResult check_param(
             return is_assignable(param, arg);
         }
         case Type::Tag::TABLE: {
-            if (arg.get_tag() != Type::Tag::TABLE) {
-                return {false, cannot_assign(param, arg)};
-            }
+            switch (arg.get_tag()) {
+                case Type::Tag::DEFERRED:
+                    return check_param(param, reduce_deferred(arg.get_deferred(), {}), genparams, nominals, genparams_inferred);
+                case Type::Tag::TABLE: {
+                    const auto& table = param.get_table();
+                    const auto& argtable = arg.get_table();
 
-            const auto& table = param.get_table();
-            const auto& argtable = arg.get_table();
+                    for (const auto& index : table.indexes) {
+                        for (const auto& argindex : argtable.indexes) {
+                            if (is_assignable(argindex.key, index.key).yes) {
+                                auto r = check_param(index.val, argindex.val, genparams, nominals, genparams_inferred);
 
-            for (const auto& index : table.indexes) {
-                for (const auto& argindex : argtable.indexes) {
-                    if (is_assignable(argindex.key, index.key).yes) {
-                        auto r = check_param(index.val, argindex.val, genparams, nominals, genparams_inferred);
+                                if (!r.yes) {
+                                    r.messages.push_back("When checking param table index `" + to_string(index.key) + "`");
+                                    return r;
+                                }
+                            }
+                        }
+                    }
+
+                    for (const auto& field : table.fields) {
+                        for (const auto& argfield : argtable.fields) {
+                            if (field.name == argfield.name) {
+                                auto r = check_param(field.type, argfield.type, genparams, nominals, genparams_inferred);
+
+                                if (!r.yes) {
+                                    r.messages.push_back("When checking param table field `" + to_string(field.name) + "`");
+                                    return r;
+                                }
+                            }
+                        }
+                    }
+
+                    return true;
+                }
+                case Type::Tag::ANY: {
+                    const auto& table = param.get_table();
+
+                    for (const auto& index : table.indexes) {
+                        auto r = check_param(index.val, Type::make_any(), genparams, nominals, genparams_inferred);
 
                         if (!r.yes) {
                             r.messages.push_back("When checking param table index `" + to_string(index.key) + "`");
                             return r;
                         }
                     }
-                }
-            }
 
-            for (const auto& field : table.fields) {
-                for (const auto& argfield : argtable.fields) {
-                    if (field.name == argfield.name) {
-                        auto r = check_param(field.type, argfield.type, genparams, nominals, genparams_inferred);
+                    for (const auto& field : table.fields) {
+                        auto r = check_param(field.type, Type::make_any(), genparams, nominals, genparams_inferred);
 
                         if (!r.yes) {
                             r.messages.push_back("When checking param table field `" + to_string(field.name) + "`");
                             return r;
                         }
                     }
+
+                    return true;
                 }
+                default:
+                    return {false, cannot_assign(param, arg)};
             }
 
-            return true;
         } break;
         case Type::Tag::SUM: {
             const auto& sum = param.get_sum();

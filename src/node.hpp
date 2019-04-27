@@ -534,7 +534,7 @@ public:
     FunctionBase() = default;
     FunctionBase(std::vector<NNameDecl> g, std::unique_ptr<NFuncParams> p, std::unique_ptr<NType> r, std::unique_ptr<NBlock> b);
 
-    Type check(Scope& parent_scope, std::vector<CompileError>& errors) const;
+    Type check(Scope& parent_scope, std::vector<CompileError>& errors, const std::optional<std::string>& local_name) const;
 
     Type get_type(Scope& parent_scope, const Type& rettype) const;
 
